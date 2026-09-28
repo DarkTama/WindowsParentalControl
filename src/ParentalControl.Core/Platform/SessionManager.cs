@@ -13,6 +13,14 @@ public static class SessionManager
             false);
     }
 
+    public static bool LockSession(int sessionId)
+    {
+        return NativeMethods.WTSDisconnectSession(
+            NativeMethods.WTS_CURRENT_SERVER_HANDLE,
+            sessionId,
+            false);
+    }
+
     public static string? GetSessionUsername(int sessionId)
     {
         if (!NativeMethods.WTSQuerySessionInformationW(

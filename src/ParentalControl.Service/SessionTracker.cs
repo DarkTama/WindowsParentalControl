@@ -4,7 +4,7 @@ using ParentalControl.Core.Models;
 using ParentalControl.Core.Platform;
 namespace ParentalControl.Service;
 
-public sealed record ActiveSession(int SessionId, string UserSid, string Username, DateTime LastTick);
+public sealed record ActiveSession(int SessionId, string UserSid, string Username, DateTime LastTick, bool IsLocked = false);
 
 public sealed class SessionTracker
 {
@@ -151,11 +151,38 @@ public sealed class SessionTracker
         _activeSessions.TryRemove(sessionId, out _);
     }
 
+    public void OnSessionLock(int sessionId, string reason = "")
+    {
+        if (_activeSessions.TryGetValue(sessionId, out var session))
+        {
+            FlushSessionTime(session);
+            _activeSessions[sessionId] = session with { IsLocked = true, LastTick = DateTime.Now };
+            EventRepository.LogEvent(session.UserSid, EventType.SESSION_LOCKED, reason);
+            _logger.Information("Session {SessionId} ({Username}) locked: {Reason}", sessionId, session.Username, reason);
+        }
+    }
+
+    public void OnSessionUnlock(int sessionId)
+    {
+        if (_activeSessions.TryGetValue(sessionId, out var session))
+        {
+            _activeSessions[sessionId] = session with { IsLocked = false, LastTick = DateTime.Now };
+            EventRepository.LogEvent(session.UserSid, EventType.SESSION_UNLOCKED, "Session unlocked");
+            _logger.Information("Session {SessionId} ({Username}) unlocked", sessionId, session.Username);
+        }
+    }
+
     public void TickAllSessions()
     {
         var now = DateTime.Now;
         foreach (var (sessionId, session) in _activeSessions)
         {
+            if (session.IsLocked)
+            {
+                // Screen is locked — do not deduct or consume daily limits
+                _activeSessions[sessionId] = session with { LastTick = now };
+                continue;
+            }
             if (now < session.LastTick)
             {
                 _logger.Warning("Clock manipulation detected for {Username}: current time {Now} is before last tick {LastTick}",
@@ -209,6 +236,7 @@ public sealed class SessionTracker
 
     private void FlushSessionTime(ActiveSession session)
     {
+        if (session.IsLocked) return;
         var now = DateTime.Now;
         if (now < session.LastTick) return;
         var elapsed = (int)(now - session.LastTick).TotalMinutes;

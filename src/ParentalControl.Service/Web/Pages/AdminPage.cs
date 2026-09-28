@@ -68,6 +68,8 @@ public static class AdminPage
                 .btn-danger:hover { background: #b91c1c; }
                 .btn-success { background: #16a34a; color: white; }
                 .btn-success:hover { background: #15803d; }
+                .btn-warning { background: #d97706; color: white; }
+                .btn-warning:hover { background: #b45309; }
                 .btn-secondary { background: #334155; color: #e2e8f0; }
                 .btn-secondary:hover { background: #475569; }
                 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
@@ -133,21 +135,27 @@ public static class AdminPage
                     let html = '<table><thead><tr><th>User</th><th>Remaining</th><th>Curfew</th><th>Quick Actions</th></tr></thead><tbody>';
                     for (const s of sessions) {
                         if (!s.isRestricted) {
-                            html += `<tr>
                                 <td><strong>${s.username}</strong> <span class="badge" style="background:#334155;color:#38bdf8;font-size:0.7rem;padding:0.15rem 0.4rem;border-radius:4px;margin-left:4px">Admin</span><br><small style="color:#64748b">Session ${s.sessionId}</small></td>
                                 <td><span style="color:#22c55e;font-weight:600">Unlimited</span></td>
                                 <td><span style="color:#64748b">—</span></td>
                                 <td>
-                                    <button class="btn btn-danger" style="padding:0.25rem 0.5rem" onclick="forceLogoff(${s.sessionId})">Logoff</button>
+                                    <div style="display:flex;gap:0.35rem;flex-wrap:wrap">
+                                        <button class="btn btn-warning" style="padding:0.25rem 0.5rem" onclick="openLockModal(${s.sessionId}, '${s.username}')">🔒 Lock</button>
+                                        <button class="btn btn-danger" style="padding:0.25rem 0.5rem" onclick="forceLogoff(${s.sessionId})">Logoff</button>
+                                    </div>
                                 </td>
                             </tr>`;
                         } else {
+                            const lockBadge = s.isLocked
+                                ? ' <span class="badge" style="background:#854d0e;color:#fef08a;font-size:0.7rem;padding:0.15rem 0.4rem;border-radius:4px">Locked (Paused)</span>'
+                                : '';
                             html += `<tr>
-                                <td><strong>${s.username}</strong><br><small style="color:#64748b">Session ${s.sessionId}</small></td>
+                                <td><strong>${s.username}</strong>${lockBadge}<br><small style="color:#64748b">Session ${s.sessionId}</small></td>
                                 <td><strong style="color:#38bdf8">${s.remainingMinutes}m</strong> / ${s.totalAllowed}m</td>
                                 <td>${s.curfew}</td>
                                 <td>
                                     <div style="display:flex;gap:0.35rem;flex-wrap:wrap">
+                                        <button class="btn btn-warning" style="padding:0.25rem 0.5rem" onclick="openLockModal(${s.sessionId}, '${s.username}')">🔒 Lock</button>
                                         <button class="btn btn-success" style="padding:0.25rem 0.5rem" onclick="grantTime(${s.userId}, 15)">+15m</button>
                                         <button class="btn btn-success" style="padding:0.25rem 0.5rem" onclick="grantTime(${s.userId}, 30)">+30m</button>
                                         <button class="btn btn-danger" style="padding:0.25rem 0.5rem" onclick="forceLogoff(${s.sessionId})">Logoff</button>
@@ -238,7 +246,72 @@ public static class AdminPage
 
                 loadDashboard();
                 setInterval(loadDashboard, 10000);
+                let targetLockSessionId = null;
+
+                function openLockModal(sessionId, username) {
+                    targetLockSessionId = sessionId;
+                    document.getElementById('lockModalTitle').innerText = `🔒 Lock Screen — ${username} (Session ${sessionId})`;
+                    document.getElementById('lockModal').style.display = 'flex';
+                }
+
+                function closeLockModal() {
+                    document.getElementById('lockModal').style.display = 'none';
+                    targetLockSessionId = null;
+                }
+
+                async function submitLockSession() {
+                    if (!targetLockSessionId) return;
+                    const msg = document.getElementById('lockMessage').value.trim();
+                    const seconds = parseInt(document.getElementById('lockSeconds').value) || 15;
+                    const btn = document.getElementById('confirmLockBtn');
+                    btn.disabled = true;
+                    btn.innerText = 'Sending alert...';
+
+                    try {
+                        const res = await fetch('/api/admin/lock-session', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ sessionId: targetLockSessionId, message: msg, seconds: seconds })
+                        });
+                        const data = await res.json();
+                        closeLockModal();
+                        if (data.message) alert(data.message);
+                        loadDashboard();
+                    } catch (e) {
+                        alert('Failed to lock session: ' + e);
+                    } finally {
+                        btn.disabled = false;
+                        btn.innerText = 'Send Alert & Lock Screen';
+                    }
+                }
+
+                loadDashboard();
+                setInterval(loadDashboard, 10000);
             </script>
+
+            <!-- Lock Modal -->
+            <div id="lockModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:999;align-items:center;justify-content:center">
+                <div style="background:#131c2e;border:1px solid #334155;border-radius:0.75rem;padding:1.5rem;max-width:460px;width:92%;box-shadow:0 20px 25px -5px rgba(0,0,0,0.6)">
+                    <h3 id="lockModalTitle" style="color:#f59e0b;margin-bottom:0.5rem;display:flex;align-items:center;gap:0.5rem">🔒 Lock Screen & Send Alert</h3>
+                    <p style="font-size:0.85rem;color:#94a3b8;margin-bottom:1rem;line-height:1.4">Displays an unskippable popup message on the user's screen with a countdown before locking the Windows session. <em>Daily screen time will not be consumed while locked.</em></p>
+                    
+                    <label style="display:block;font-size:0.85rem;color:#cbd5e1;margin-bottom:0.35rem;font-weight:600">Custom Message for User:</label>
+                    <textarea id="lockMessage" style="width:100%;height:75px;background:#090d16;border:1px solid #334155;border-radius:0.375rem;padding:0.5rem;color:#f8fafc;font-size:0.875rem;resize:none;margin-bottom:1rem">Waktunya istirahat / makan. Simpan permainan dan tugas Anda sekarang.</textarea>
+                    
+                    <label style="display:block;font-size:0.85rem;color:#cbd5e1;margin-bottom:0.35rem;font-weight:600">Warning Display Duration before Lock:</label>
+                    <select id="lockSeconds" style="width:100%;background:#090d16;border:1px solid #334155;border-radius:0.375rem;padding:0.5rem;color:#f8fafc;font-size:0.875rem;margin-bottom:1.5rem">
+                        <option value="10">10 seconds</option>
+                        <option value="15" selected>15 seconds (Recommended)</option>
+                        <option value="20">20 seconds</option>
+                        <option value="30">30 seconds</option>
+                    </select>
+                    
+                    <div style="display:flex;justify-content:flex-end;gap:0.75rem">
+                        <button class="btn btn-secondary" onclick="closeLockModal()">Cancel</button>
+                        <button class="btn btn-warning" id="confirmLockBtn" onclick="submitLockSession()">Send Alert & Lock Screen</button>
+                    </div>
+                </div>
+            </div>
         </body>
         </html>
         """;

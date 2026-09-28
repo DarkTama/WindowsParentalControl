@@ -294,6 +294,7 @@ public sealed class WebServerHost : BackgroundService
                     username = activeSession.Username,
                     userId = user.Id,
                     isRestricted,
+                    isLocked = activeSession.IsLocked,
                     remainingMinutes = remaining,
                     totalAllowed,
                     curfew = limit != null ? $"{limit.ScheduleStart:HH:mm}–{limit.ScheduleEnd:HH:mm}" : "None"
@@ -374,6 +375,52 @@ public sealed class WebServerHost : BackgroundService
             return Results.Ok(new { success = true });
         });
 
+        // Web Admin Lock Session with Pre-Warning API
+        app.MapPost("/api/admin/lock-session", async (HttpContext ctx) =>
+        {
+            if (!CheckAuth(ctx)) return Results.Unauthorized();
+
+            try
+            {
+                using var reader = new StreamReader(ctx.Request.Body);
+                var doc = JsonDocument.Parse(await reader.ReadToEndAsync());
+                var sessionId = doc.RootElement.GetProperty("sessionId").GetInt32();
+                var message = doc.RootElement.TryGetProperty("message", out var mProp) ? mProp.GetString() : "";
+                var seconds = doc.RootElement.TryGetProperty("seconds", out var sProp) ? sProp.GetInt32() : 15;
+
+                if (seconds < 5) seconds = 5;
+                if (seconds > 60) seconds = 60;
+
+                if (string.IsNullOrWhiteSpace(message))
+                {
+                    message = "Waktunya istirahat. Komputer akan segera dikunci oleh administrator.";
+                }
+
+                var sessionUser = _sessionTracker.ActiveSessions.TryGetValue(sessionId, out var s) ? s.Username : $"Session {sessionId}";
+
+                _logger.Information("Lock requested for session {SessionId} ({Username}) with {Seconds}s countdown: {Message}",
+                    sessionId, sessionUser, seconds, message);
+
+                // 1. Send unskippable native Win32 popup into session with countdown duration
+                var popupText = $"{message}\n\n(Layar akan otomatis dikunci dalam {seconds} detik)";
+                NotificationManager.SendMessage(sessionId, "Parental Control — Layar Dikunci", popupText, isWarning: true, timeoutSeconds: seconds);
+
+                // 2. Schedule lock after countdown so user has 10-15s to view/save
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(seconds));
+                    SessionManager.LockSession(sessionId);
+                    _sessionTracker.OnSessionLock(sessionId, $"Remote lock from Web Admin ({seconds}s delay): {message}");
+                });
+
+                return Results.Ok(new { success = true, message = $"Peringatan dikirim ke {sessionUser}. Layar akan dikunci dalam {seconds} detik." });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "Failed to execute lock session request");
+                return Results.BadRequest(new { error = "Invalid lock request payload." });
+            }
+        });
         // Web Admin Resolve Request API
         app.MapPost("/api/admin/resolve-request", async (HttpContext ctx) =>
         {

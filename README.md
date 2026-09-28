@@ -28,7 +28,7 @@ An enhanced screen time and schedule curfew management system for Windows 10/11 
 ### 4. Embedded Web Admin & Authenticator 2FA (RFC 6238 TOTP)
 - Background service hosts an embedded lightweight Kestrel web server on `http://0.0.0.0:5050` (accessible over local network or Tailscale VPN).
 - Protected by Authenticator TOTP (Google Authenticator, Microsoft Authenticator, 1Password) with constant-time equality checks.
-- Monitor active sessions, view real-time remaining minutes, trigger manual 1-click bonuses or emergency logoffs from your phone.
+- Monitor active sessions, view real-time remaining minutes, trigger manual 1-click bonuses, emergency logoffs, or remote screen lock with custom warning message and 10–15s countdown (pauses usage tracking without burning daily allowance).
 
 ### 5. Session Tray Agent & Foreground App Logging
 - `ParentalControl.Agent.exe` runs silently in interactive user sessions.

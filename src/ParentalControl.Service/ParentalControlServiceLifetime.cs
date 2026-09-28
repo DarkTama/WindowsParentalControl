@@ -39,6 +39,16 @@ public sealed class ParentalControlServiceLifetime : WindowsServiceLifetime
                 case SessionChangeReason.SessionLogoff:
                     _sessionTracker.OnUserLogoff(changeDescription.SessionId);
                     break;
+                case SessionChangeReason.SessionLock:
+                case SessionChangeReason.ConsoleDisconnect:
+                case SessionChangeReason.RemoteDisconnect:
+                    _sessionTracker.OnSessionLock(changeDescription.SessionId, "Windows session locked/disconnected");
+                    break;
+                case SessionChangeReason.SessionUnlock:
+                case SessionChangeReason.ConsoleConnect:
+                case SessionChangeReason.RemoteConnect:
+                    _sessionTracker.OnSessionUnlock(changeDescription.SessionId);
+                    break;
             }
         }
         catch (Exception ex)

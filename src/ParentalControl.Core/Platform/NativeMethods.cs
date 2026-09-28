@@ -12,6 +12,10 @@ internal static class NativeMethods
 
     [DllImport("wtsapi32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool WTSDisconnectSession(IntPtr hServer, int sessionId, [MarshalAs(UnmanagedType.Bool)] bool bWait);
+
+    [DllImport("wtsapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
     internal static extern bool WTSQuerySessionInformationW(
         IntPtr hServer,
         int sessionId,

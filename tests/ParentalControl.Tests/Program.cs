@@ -84,6 +84,14 @@ Debug.Assert(saturdayLimit!.DailyMinutes == 180, "Saturday limit should be 180")
 var sundayLimit = ScheduleRepository.GetEffectiveLimit(user.Id, DayOfWeek.Sunday);
 Console.WriteLine("✅ Weekly Schedule & Fallback Verification Passed.");
 
+// 7. Test Session Lock/Unlock Event Types
+EventRepository.LogEvent(testSid, EventType.SESSION_LOCKED, "Locked via Web Admin (15s delay)");
+EventRepository.LogEvent(testSid, EventType.SESSION_UNLOCKED, "Unlocked by user");
+var events = EventRepository.GetEvents(userSid: testSid);
+Debug.Assert(events.Any(e => e.EventType == EventType.SESSION_LOCKED), "SESSION_LOCKED event should be recorded");
+Debug.Assert(events.Any(e => e.EventType == EventType.SESSION_UNLOCKED), "SESSION_UNLOCKED event should be recorded");
+Console.WriteLine("✅ Session Lock & Unlock Events Verification Passed.");
+
 // Cleanup test user
 UserRepository.DeleteBySid(testSid);
 ScheduleRepository.DeleteForUser(user.Id);
