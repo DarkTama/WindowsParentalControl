@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Hosting.WindowsServices;
+using ParentalControl.Core.Services;
 using ParentalControl.Core.Data;
 using ParentalControl.Core.Logging;
 using ParentalControl.Service;
@@ -12,6 +13,8 @@ var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddSingleton(logger);
 builder.Services.AddSingleton<SessionTracker>();
 builder.Services.AddHostedService<UsageMonitorWorker>();
+builder.Services.AddSingleton<TelegramBotService>();
+builder.Services.AddHostedService<TelegramWorker>();
 builder.Services.AddSingleton<IHostLifetime>(sp =>
 {
     var env = sp.GetRequiredService<IHostEnvironment>();
