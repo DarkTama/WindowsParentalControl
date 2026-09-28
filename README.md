@@ -20,7 +20,7 @@ An enhanced screen time and schedule curfew management system for Windows 10/11 
 ### 3. Remote Grace Time Requests via Telegram
 - Brother clicks "Request Screen Time..." in the taskbar tray or opens `http://localhost:5050/request`.
 - Selects extension (+15m, +30m, +1h) and enters a reason.
-- Strictly limited to 1 submission per restricted user per calendar day.
+- Configurable daily request quota per user (default: 1 submission per calendar day, adjustable or disableable via Admin Settings).
 - Offline-safe: request form verifies internet connectivity and disables submission if the home PC is offline.
 - Sends an interactive alert to your private Telegram chat with 1-tap buttons: `[Approve 15m]`, `[Approve 30m]`, `[Decline]`.
 - Approval automatically credits bonus minutes to today's usage without altering permanent limits and pops an approval notification on the brother's screen.

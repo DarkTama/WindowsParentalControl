@@ -23,6 +23,34 @@ public static class GraceRequestRepository
         return ReadRecord(reader);
     }
 
+    public static int GetTodayRequestCount(int userId, DateOnly date)
+    {
+        using var connection = DatabaseManager.CreateConnection();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT COUNT(*)
+            FROM grace_requests
+            WHERE user_id = @userId AND date = @date
+            """;
+        cmd.Parameters.AddWithValue("@userId", userId);
+        cmd.Parameters.AddWithValue("@date", date.ToString("yyyy-MM-dd"));
+        return Convert.ToInt32(cmd.ExecuteScalar());
+    }
+
+    public static bool HasPendingRequest(int userId, DateOnly date)
+    {
+        using var connection = DatabaseManager.CreateConnection();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            SELECT COUNT(*)
+            FROM grace_requests
+            WHERE user_id = @userId AND date = @date AND status = 'PENDING'
+            """;
+        cmd.Parameters.AddWithValue("@userId", userId);
+        cmd.Parameters.AddWithValue("@date", date.ToString("yyyy-MM-dd"));
+        return Convert.ToInt32(cmd.ExecuteScalar()) > 0;
+    }
+
     public static GraceRequest Create(int userId, DateOnly date, int requestedMinutes, string reason)
     {
         var now = DateTime.Now;

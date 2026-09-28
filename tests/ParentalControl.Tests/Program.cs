@@ -49,7 +49,14 @@ Debug.Assert(retrievedReq!.RequestedMinutes == 30, "Requested minutes should be 
 GraceRequestRepository.Resolve(req.Id, "APPROVED");
 var resolvedReq = GraceRequestRepository.GetById(req.Id);
 Debug.Assert(resolvedReq!.Status == "APPROVED", "Status should be updated to APPROVED");
-Console.WriteLine("✅ Grace Request Repository Verification Passed.");
+var count = GraceRequestRepository.GetTodayRequestCount(user.Id, today);
+Debug.Assert(count == 1, "Today's request count should be 1");
+Debug.Assert(!GraceRequestRepository.HasPendingRequest(user.Id, today), "Pending request should be false after resolve");
+
+Debug.Assert(SettingsRepository.GetMaxDailyRequests() == 1, "Default max daily requests should be 1");
+SettingsRepository.Set(SettingsRepository.KeyMaxDailyRequests, "3");
+Debug.Assert(SettingsRepository.GetMaxDailyRequests() == 3, "Updated max daily requests should be 3");
+Console.WriteLine("✅ Grace Request Repository & Dynamic Limits Verification Passed.");
 
 // 5. Test Usage and Bonus Minutes
 UsageRepository.SetUsage(user.Id, today, 60);

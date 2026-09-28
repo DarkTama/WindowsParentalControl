@@ -93,6 +93,25 @@
                     </StackPanel>
                 </md:Card>
 
+                <!-- ═══ Screen Time Request Limits ═══ -->
+                <md:ColorZone Mode="PrimaryMid" Padding="8,6" CornerRadius="4" Margin="0,0,0,8">
+                    <TextBlock Text="Screen Time Request Limits"
+                               FontSize="14" FontWeight="DemiBold"
+                               Foreground="{DynamicResource MaterialDesign.Brush.Primary.Foreground}"
+                               VerticalAlignment="Center" />
+                </md:ColorZone>
+
+                <md:Card Padding="20" Margin="0,0,0,24" md:ElevationAssist.Elevation="Dp2">
+                    <StackPanel>
+                        <TextBlock Text="Maximum number of screen time extension requests a restricted user can submit per calendar day (default: 1, 0 to disable)."
+                                   TextWrapping="Wrap" Opacity="0.7" Margin="0,0,0,16" />
+
+                        <TextBox md:HintAssist.Hint="Max Daily Requests Per User (e.g. 1)"
+                                 md:HintAssist.IsFloating="True"
+                                 Text="{Binding MaxDailyRequests, UpdateSourceTrigger=PropertyChanged}"
+                                 Style="{StaticResource MaterialDesignOutlinedTextBox}" />
+                    </StackPanel>
+                </md:Card>
                 <!-- ═══ Authenticator TOTP Security ═══ -->
                 <md:ColorZone Mode="PrimaryMid" Padding="8,6" CornerRadius="4" Margin="0,0,0,8">
                     <TextBlock Text="Web Admin Authenticator 2FA (RFC 6238 TOTP)"

@@ -2,24 +2,43 @@ namespace ParentalControl.Service.Web.Pages;
 
 public static class RequestPage
 {
-    public static string Render(string username, int remainingMinutes, string curfew, bool isOffline, bool hasPendingOrDoneRequest, string? existingStatus)
+    public static string Render(string username, int remainingMinutes, string curfew, bool isOffline, int requestsSubmittedToday, int maxDailyRequests, bool hasPendingRequest, string? latestStatus)
     {
         var offlineAlert = isOffline
             ? """<div class="banner banner-error">⚠️ Komputer sedang offline. Permintaan hanya dapat dikirim saat terhubung ke internet.</div>"""
             : "";
 
-        var statusLabel = existingStatus switch
+        var statusLabel = latestStatus switch
         {
             "PENDING" => "Menunggu Persetujuan",
             "APPROVED" => "Disetujui",
             "DECLINED" => "Ditolak",
-            _ => existingStatus ?? ""
+            _ => latestStatus ?? ""
         };
 
-        var alreadySubmittedAlert = hasPendingOrDoneRequest
-            ? $"""<div class="banner banner-info">ℹ️ Anda sudah mengirim permintaan hari ini (Status: <strong>{statusLabel}</strong>). Hanya 1 permintaan yang diizinkan per hari.</div>"""
-            : "";
-        var disableForm = isOffline || hasPendingOrDoneRequest;
+        var requestLimitAlert = "";
+        var disableForm = isOffline;
+
+        if (maxDailyRequests <= 0)
+        {
+            requestLimitAlert = """<div class="banner banner-error">⚠️ Permintaan waktu tambahan saat ini dinonaktifkan oleh administrator.</div>""";
+            disableForm = true;
+        }
+        else if (hasPendingRequest)
+        {
+            requestLimitAlert = """<div class="banner banner-info">ℹ️ Anda masih memiliki permintaan yang sedang menunggu keputusan administrator (Status: <strong>Menunggu Persetujuan</strong>). Harap tunggu sebelum mengirim lagi.</div>""";
+            disableForm = true;
+        }
+        else if (requestsSubmittedToday >= maxDailyRequests)
+        {
+            requestLimitAlert = $"""<div class="banner banner-info">ℹ️ Anda telah mencapai batas maksimal ({maxDailyRequests}) permintaan untuk hari ini (Status terakhir: <strong>{statusLabel}</strong>).</div>""";
+            disableForm = true;
+        }
+        else if (requestsSubmittedToday > 0)
+        {
+            requestLimitAlert = $"""<div class="banner banner-info">ℹ️ Anda telah menggunakan {requestsSubmittedToday} dari {maxDailyRequests} permintaan hari ini (Status terakhir: <strong>{statusLabel}</strong>).</div>""";
+        }
+
         var disabledAttr = disableForm ? "disabled" : "";
 
         return $$"""
@@ -74,7 +93,7 @@ public static class RequestPage
                 </div>
 
                 {{offlineAlert}}
-                {{alreadySubmittedAlert}}
+                {{requestLimitAlert}}
 
                 <div id="feedback"></div>
 

@@ -9,6 +9,7 @@ public static class SettingsRepository
     public const string KeyTotpSecret = "totp_secret";
     public const string KeyTotpEnabled = "totp_enabled";
     public const string KeyAlertIntervals = "alert_intervals"; // e.g. "15,5,1"
+    public const string KeyMaxDailyRequests = "max_daily_requests"; // default: 1
 
     public static string Get(string key, string defaultValue = "")
     {
@@ -19,6 +20,12 @@ public static class SettingsRepository
 
         var result = cmd.ExecuteScalar();
         return result?.ToString() ?? defaultValue;
+    }
+
+    public static int GetMaxDailyRequests()
+    {
+        var val = Get(KeyMaxDailyRequests, "1");
+        return int.TryParse(val, out var max) && max >= 0 ? max : 1;
     }
 
     public static void Set(string key, string value)

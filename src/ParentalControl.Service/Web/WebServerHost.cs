@@ -78,15 +78,20 @@ public sealed class WebServerHost : BackgroundService
             var curfew = limit != null ? $"{limit.ScheduleStart:HH:mm} – {limit.ScheduleEnd:HH:mm}" : "08:00 – 22:00";
 
             var isOffline = !await TelegramBotService.CheckConnectivityAsync();
-            var existingReq = GraceRequestRepository.GetTodayRequest(targetUser.Id, today);
+            var maxRequests = SettingsRepository.GetMaxDailyRequests();
+            var countToday = GraceRequestRepository.GetTodayRequestCount(targetUser.Id, today);
+            var hasPending = GraceRequestRepository.HasPendingRequest(targetUser.Id, today);
+            var latestReq = GraceRequestRepository.GetTodayRequest(targetUser.Id, today);
 
             var html = RequestPage.Render(
                 targetUser.Username,
                 remaining,
                 curfew,
                 isOffline,
-                existingReq != null,
-                existingReq?.Status);
+                countToday,
+                maxRequests,
+                hasPending,
+                latestReq?.Status);
 
             return Results.Content(html, "text/html");
         });
@@ -120,18 +125,22 @@ public sealed class WebServerHost : BackgroundService
                     return Results.BadRequest(new { error = "Pengguna tidak ditemukan." });
                 }
 
-                // Check 1-per-day rule
-                var existing = GraceRequestRepository.GetTodayRequest(user.Id, today);
-                if (existing != null)
+                // Check daily request limits and pending requests
+                var maxRequests = SettingsRepository.GetMaxDailyRequests();
+                if (maxRequests <= 0)
                 {
-                    var statusLabel = existing.Status switch
-                    {
-                        "PENDING" => "Menunggu Persetujuan",
-                        "APPROVED" => "Disetujui",
-                        "DECLINED" => "Ditolak",
-                        _ => existing.Status
-                    };
-                    return Results.BadRequest(new { error = $"Anda sudah mengirim permintaan hari ini (Status: {statusLabel})." });
+                    return Results.BadRequest(new { error = "Permintaan tambahan waktu dinonaktifkan oleh administrator." });
+                }
+
+                if (GraceRequestRepository.HasPendingRequest(user.Id, today))
+                {
+                    return Results.BadRequest(new { error = "Anda masih memiliki permintaan yang sedang menunggu keputusan administrator." });
+                }
+
+                var countToday = GraceRequestRepository.GetTodayRequestCount(user.Id, today);
+                if (countToday >= maxRequests)
+                {
+                    return Results.BadRequest(new { error = $"Anda telah mencapai batas maksimal ({maxRequests}) permintaan untuk hari ini." });
                 }
 
                 // Check internet

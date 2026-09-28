@@ -23,6 +23,8 @@ public partial class SettingsViewModel : ObservableObject
     private string _alertIntervals = "15,5,1";
 
     [ObservableProperty]
+    private int _maxDailyRequests = 1;
+    [ObservableProperty]
     private bool _isTotpEnabled;
 
     [ObservableProperty]
@@ -51,8 +53,8 @@ public partial class SettingsViewModel : ObservableObject
         TelegramBotToken = SettingsRepository.Get(SettingsRepository.KeyTelegramBotToken);
         TelegramChatId = SettingsRepository.Get(SettingsRepository.KeyTelegramChatId);
         AlertIntervals = SettingsRepository.Get(SettingsRepository.KeyAlertIntervals, "15,5,1");
+        MaxDailyRequests = SettingsRepository.GetMaxDailyRequests();
         IsTotpEnabled = SettingsRepository.Get(SettingsRepository.KeyTotpEnabled, "false") == "true";
-        TotpSecret = SettingsRepository.Get(SettingsRepository.KeyTotpSecret);
         TotpSecret = SettingsRepository.Get(SettingsRepository.KeyTotpSecret);
         if (!string.IsNullOrWhiteSpace(TotpSecret))
         {
@@ -218,6 +220,7 @@ public partial class SettingsViewModel : ObservableObject
         SettingsRepository.Set(SettingsRepository.KeyTelegramBotToken, TelegramBotToken.Trim());
         SettingsRepository.Set(SettingsRepository.KeyTelegramChatId, TelegramChatId.Trim());
         SettingsRepository.Set(SettingsRepository.KeyAlertIntervals, AlertIntervals.Trim());
+        SettingsRepository.Set(SettingsRepository.KeyMaxDailyRequests, MaxDailyRequests.ToString());
         SettingsRepository.Set(SettingsRepository.KeyTotpEnabled, IsTotpEnabled ? "true" : "false");
         SettingsRepository.Set(SettingsRepository.KeyTotpSecret, TotpSecret.Trim());
 
