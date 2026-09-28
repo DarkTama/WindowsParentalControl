@@ -47,30 +47,49 @@ public sealed class WebServerHost : BackgroundService
         app.MapGet("/request", async (HttpContext ctx) =>
         {
             var today = DateOnly.FromDateTime(DateTime.Now);
-            var nowTime = TimeOnly.FromDateTime(DateTime.Now);
             var dayOfWeek = DateTime.Now.DayOfWeek;
+
+            var allUsers = UserRepository.GetAll();
+            var restrictedUsers = allUsers.Where(u => u.IsRestricted).ToList();
 
             // Detect user from active session
             var sessions = _sessionTracker.ActiveSessions.Values.ToList();
             var activeSession = sessions.FirstOrDefault();
+            User? activeUser = activeSession != null ? UserRepository.GetBySid(activeSession.UserSid) : null;
+
+            // Check if specific restricted user was requested via query parameter ?user=...
+            var queryUser = ctx.Request.Query["user"].ToString();
             User? targetUser = null;
-
-            if (activeSession != null)
+            if (!string.IsNullOrWhiteSpace(queryUser))
             {
-                targetUser = UserRepository.GetBySid(activeSession.UserSid);
+                targetUser = restrictedUsers.FirstOrDefault(u => string.Equals(u.Username, queryUser, StringComparison.OrdinalIgnoreCase));
             }
 
+            bool isAdminTesting = false;
+
+            // If active user is an active restricted user in session
+            if (targetUser == null && activeUser != null && activeUser.IsRestricted)
+            {
+                targetUser = activeUser;
+            }
+
+            // If active user is an unrestricted Administrator
             if (targetUser == null)
             {
-                targetUser = UserRepository.GetAll().FirstOrDefault(u => u.IsRestricted);
+                if (restrictedUsers.Count > 0)
+                {
+                    // Admin is previewing/testing allowance page for restricted child account
+                    targetUser = restrictedUsers.FirstOrDefault();
+                    isAdminTesting = true;
+                }
+                else
+                {
+                    // No restricted accounts on machine at all
+                    return Results.Content(RequestPage.RenderUnrestricted(activeUser?.Username ?? "Administrator"), "text/html");
+                }
             }
 
-            if (targetUser == null)
-            {
-                return Results.Content("<h3>No restricted users found on this system.</h3>", "text/html");
-            }
-
-            var limit = ScheduleRepository.GetEffectiveLimit(targetUser.Id, dayOfWeek);
+            var limit = ScheduleRepository.GetEffectiveLimit(targetUser!.Id, dayOfWeek);
             var usage = UsageRepository.GetUsage(targetUser.Id, today);
             var totalAllowed = (limit?.DailyMinutes ?? 120) + (usage?.BonusMinutes ?? 0);
             var used = usage?.MinutesUsed ?? 0;
@@ -83,6 +102,8 @@ public sealed class WebServerHost : BackgroundService
             var hasPending = GraceRequestRepository.HasPendingRequest(targetUser.Id, today);
             var latestReq = GraceRequestRepository.GetTodayRequest(targetUser.Id, today);
 
+            var availableUsernames = restrictedUsers.Select(u => u.Username).ToList();
+
             var html = RequestPage.Render(
                 targetUser.Username,
                 remaining,
@@ -91,7 +112,9 @@ public sealed class WebServerHost : BackgroundService
                 countToday,
                 maxRequests,
                 hasPending,
-                latestReq?.Status);
+                latestReq?.Status,
+                isAdminTesting,
+                availableUsernames);
 
             return Results.Content(html, "text/html");
         });
@@ -106,6 +129,7 @@ public sealed class WebServerHost : BackgroundService
                 var doc = JsonDocument.Parse(body);
                 var minutes = doc.RootElement.GetProperty("minutes").GetInt32();
                 var reason = doc.RootElement.GetProperty("reason").GetString() ?? "";
+                var requestedUser = doc.RootElement.TryGetProperty("username", out var uProp) ? uProp.GetString() : null;
 
                 if (minutes <= 0 || minutes > 120 || string.IsNullOrWhiteSpace(reason))
                 {
@@ -114,15 +138,29 @@ public sealed class WebServerHost : BackgroundService
 
                 var today = DateOnly.FromDateTime(DateTime.Now);
 
-                // Detect active user
-                var sessions = _sessionTracker.ActiveSessions.Values.ToList();
-                var activeSession = sessions.FirstOrDefault();
-                User? user = activeSession != null ? UserRepository.GetBySid(activeSession.UserSid) : null;
-                user ??= UserRepository.GetAll().FirstOrDefault(u => u.IsRestricted);
+                var restrictedUsers = UserRepository.GetAll().Where(u => u.IsRestricted).ToList();
+                User? user = null;
+
+                if (!string.IsNullOrWhiteSpace(requestedUser))
+                {
+                    user = restrictedUsers.FirstOrDefault(u => string.Equals(u.Username, requestedUser, StringComparison.OrdinalIgnoreCase));
+                }
 
                 if (user == null)
                 {
-                    return Results.BadRequest(new { error = "Pengguna tidak ditemukan." });
+                    var sessions = _sessionTracker.ActiveSessions.Values.ToList();
+                    foreach (var s in sessions)
+                    {
+                        var u = UserRepository.GetBySid(s.UserSid);
+                        if (u != null && u.IsRestricted) { user = u; break; }
+                    }
+                }
+
+                user ??= restrictedUsers.FirstOrDefault();
+
+                if (user == null)
+                {
+                    return Results.BadRequest(new { error = "Pengguna terbatas tidak ditemukan." });
                 }
 
                 // Check daily request limits and pending requests
@@ -243,21 +281,22 @@ public sealed class WebServerHost : BackgroundService
             {
                 var user = UserRepository.GetBySid(activeSession.UserSid);
                 if (user == null) continue;
-
-                var limit = ScheduleRepository.GetEffectiveLimit(user.Id, dayOfWeek);
-                var usage = UsageRepository.GetUsage(user.Id, today);
-                var totalAllowed = (limit?.DailyMinutes ?? 120) + (usage?.BonusMinutes ?? 0);
+                var isRestricted = user.IsRestricted;
+                var limit = isRestricted ? ScheduleRepository.GetEffectiveLimit(user.Id, dayOfWeek) : null;
+                var usage = isRestricted ? UsageRepository.GetUsage(user.Id, today) : null;
+                var totalAllowed = limit != null ? (limit.DailyMinutes + (usage?.BonusMinutes ?? 0)) : 0;
                 var used = usage?.MinutesUsed ?? 0;
-                var remaining = Math.Max(0, totalAllowed - used);
+                var remaining = limit != null ? Math.Max(0, totalAllowed - used) : 0;
 
                 sessionList.Add(new
                 {
                     sessionId,
                     username = activeSession.Username,
                     userId = user.Id,
+                    isRestricted,
                     remainingMinutes = remaining,
                     totalAllowed,
-                    curfew = limit != null ? $"{limit.ScheduleStart:HH:mm}–{limit.ScheduleEnd:HH:mm}" : "08:00–22:00"
+                    curfew = limit != null ? $"{limit.ScheduleStart:HH:mm}–{limit.ScheduleEnd:HH:mm}" : "None"
                 });
             }
 

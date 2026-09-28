@@ -2,8 +2,19 @@ namespace ParentalControl.Service.Web.Pages;
 
 public static class RequestPage
 {
-    public static string Render(string username, int remainingMinutes, string curfew, bool isOffline, int requestsSubmittedToday, int maxDailyRequests, bool hasPendingRequest, string? latestStatus)
+    public static string Render(string username, int remainingMinutes, string curfew, bool isOffline, int requestsSubmittedToday, int maxDailyRequests, bool hasPendingRequest, string? latestStatus, bool isAdminTesting = false, List<string>? availableUsers = null)
     {
+        var adminBanner = "";
+        if (isAdminTesting)
+        {
+            var switchLinks = "";
+            if (availableUsers != null && availableUsers.Count > 1)
+            {
+                var links = string.Join(" | ", availableUsers.Select(u => $"<a href=\"/request?user={u}\" style=\"color:#38bdf8;text-decoration:underline\">{u}</a>"));
+                switchLinks = $"<div style=\"margin-top:0.35rem;font-size:0.8rem;opacity:0.9\">Ganti Akun Pengujian: {links}</div>";
+            }
+            adminBanner = $"""<div class="banner banner-info" style="border-left:4px solid #38bdf8">🔧 <strong>Mode Uji Coba Administrator</strong>: Menampilkan status akun terbatas <strong>{username}</strong>.{switchLinks}</div>""";
+        }
         var offlineAlert = isOffline
             ? """<div class="banner banner-error">⚠️ Komputer sedang offline. Permintaan hanya dapat dikirim saat terhubung ke internet.</div>"""
             : "";
@@ -91,7 +102,7 @@ public static class RequestPage
                         <div class="lbl">Batas Jam Malam</div>
                     </div>
                 </div>
-
+                {{adminBanner}}
                 {{offlineAlert}}
                 {{requestLimitAlert}}
 
@@ -103,13 +114,15 @@ public static class RequestPage
                         <div class="radio-btn">
                             <input type="radio" id="m15" name="minutes" value="15" checked {{disabledAttr}}>
                             <label for="m15">+15 Menit</label>
+                        </div>
                         <div class="radio-btn">
                             <input type="radio" id="m30" name="minutes" value="30" {{disabledAttr}}>
                             <label for="m30">+30 Menit</label>
+                        </div>
                         <div class="radio-btn">
                             <input type="radio" id="m60" name="minutes" value="60" {{disabledAttr}}>
                             <label for="m60">+1 Jam</label>
-                    </div>
+                        </div>
 
                     <label for="reason">Alasan meminta tambahan waktu:</label>
                     <textarea id="reason" name="reason" placeholder="Contoh: Sedang bermain game dengan teman, menyelesaikan tugas sekolah..." required {{disabledAttr}}></textarea>
@@ -133,7 +146,7 @@ public static class RequestPage
                         const res = await fetch('/api/request', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ minutes: parseInt(minutes), reason: reason })
+                            body: JSON.stringify({ minutes: parseInt(minutes), reason: reason, username: '{{username}}' })
                         });
                         const data = await res.json();
                         feedback.style.display = 'block';
@@ -156,6 +169,38 @@ public static class RequestPage
                     }
                 }
             </script>
+        </body>
+        </html>
+        """;
+    }
+
+    public static string RenderUnrestricted(string username)
+    {
+        return $$"""
+        <!DOCTYPE html>
+        <html lang="id">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Parental Control — Akun Bebas</title>
+            <style>
+                * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+                body { background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 1rem; }
+                .card { background: #1e293b; border-radius: 1rem; padding: 2.5rem 2rem; max-width: 480px; width: 100%; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5); text-align: center; }
+                h1 { font-size: 1.5rem; margin-bottom: 1rem; color: #38bdf8; }
+                p { font-size: 0.95rem; color: #94a3b8; line-height: 1.6; margin-bottom: 1.5rem; }
+                .badge { background: #064e3b; color: #a7f3d0; padding: 0.35rem 0.85rem; border-radius: 9999px; font-weight: 600; font-size: 0.85rem; display: inline-block; margin-bottom: 1.25rem; }
+                .btn { display: inline-block; background: #0284c7; color: white; padding: 0.75rem 1.5rem; border-radius: 0.5rem; text-decoration: none; font-weight: 600; }
+                .btn:hover { background: #0369a1; }
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <h1>🛡️ Parental Control</h1>
+                <div class="badge">Akun: {{username}} (Administrator / Tidak Dibatasi)</div>
+                <p>Akun ini tidak memiliki batasan waktu layar atau jam malam harian. Anda bebas menggunakan komputer kapan saja tanpa batas waktu.</p>
+                <a href="/admin" class="btn">Buka Web Admin Console &rarr;</a>
+            </div>
         </body>
         </html>
         """;

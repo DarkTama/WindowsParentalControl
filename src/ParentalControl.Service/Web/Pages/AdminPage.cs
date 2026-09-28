@@ -132,18 +132,29 @@ public static class AdminPage
                     }
                     let html = '<table><thead><tr><th>User</th><th>Remaining</th><th>Curfew</th><th>Quick Actions</th></tr></thead><tbody>';
                     for (const s of sessions) {
-                        html += `<tr>
-                            <td><strong>${s.username}</strong><br><small style="color:#64748b">Session ${s.sessionId}</small></td>
-                            <td><strong style="color:#38bdf8">${s.remainingMinutes}m</strong> / ${s.totalAllowed}m</td>
-                            <td>${s.curfew}</td>
-                            <td>
-                                <div style="display:flex;gap:0.35rem;flex-wrap:wrap">
-                                    <button class="btn btn-success" style="padding:0.25rem 0.5rem" onclick="grantTime(${s.userId}, 15)">+15m</button>
-                                    <button class="btn btn-success" style="padding:0.25rem 0.5rem" onclick="grantTime(${s.userId}, 30)">+30m</button>
+                        if (!s.isRestricted) {
+                            html += `<tr>
+                                <td><strong>${s.username}</strong> <span class="badge" style="background:#334155;color:#38bdf8;font-size:0.7rem;padding:0.15rem 0.4rem;border-radius:4px;margin-left:4px">Admin</span><br><small style="color:#64748b">Session ${s.sessionId}</small></td>
+                                <td><span style="color:#22c55e;font-weight:600">Unlimited</span></td>
+                                <td><span style="color:#64748b">—</span></td>
+                                <td>
                                     <button class="btn btn-danger" style="padding:0.25rem 0.5rem" onclick="forceLogoff(${s.sessionId})">Logoff</button>
-                                </div>
-                            </td>
-                        </tr>`;
+                                </td>
+                            </tr>`;
+                        } else {
+                            html += `<tr>
+                                <td><strong>${s.username}</strong><br><small style="color:#64748b">Session ${s.sessionId}</small></td>
+                                <td><strong style="color:#38bdf8">${s.remainingMinutes}m</strong> / ${s.totalAllowed}m</td>
+                                <td>${s.curfew}</td>
+                                <td>
+                                    <div style="display:flex;gap:0.35rem;flex-wrap:wrap">
+                                        <button class="btn btn-success" style="padding:0.25rem 0.5rem" onclick="grantTime(${s.userId}, 15)">+15m</button>
+                                        <button class="btn btn-success" style="padding:0.25rem 0.5rem" onclick="grantTime(${s.userId}, 30)">+30m</button>
+                                        <button class="btn btn-danger" style="padding:0.25rem 0.5rem" onclick="forceLogoff(${s.sessionId})">Logoff</button>
+                                    </div>
+                                </td>
+                            </tr>`;
+                        }
                     }
                     html += '</tbody></table>';
                     c.innerHTML = html;
