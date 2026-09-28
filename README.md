@@ -122,7 +122,16 @@ dotnet run --project src/ParentalControl.Admin
 - Set 7-day limits, test quick grace buttons (`+15 min`, `+30 min`, `+1 hr`), or view logged app activity.
 - Open **⚙️ Settings** to configure your Telegram Bot credentials or setup Authenticator 2FA.
 
-#### Step B: Run the Background Service (Elevated)
+#### Step B: Configure Telegram Bot (Mobile Notifications)
+1. **Create Bot**: Message `@BotFather` on Telegram, send `/newbot`, choose a name and username, then copy the bot token (format: `1234567890:ABC...`).
+2. **Start Conversation**: Search for your bot in Telegram and tap **Start** (or send `/start`). Telegram bots cannot initiate contact with users until the user messages them first.
+3. **Get Your Numeric Chat ID**:
+   - *Option A (Built-in)*: In the Admin UI **⚙️ Settings**, enter the Bot Token and click **Detect ID**.
+   - *Option B*: Message `@userinfobot` or `@RawDataBot` on Telegram to get your numeric User ID (e.g. `123456789`).
+   - *Note*: Telegram rejects `@username` for bot DMs. You must use the numeric ID.
+4. **Test & Save**: Click **Test Telegram Alert** to verify message delivery to your phone, then click **Save Settings**.
+
+#### Step C: Run the Background Service (Elevated)
 Open PowerShell as **Administrator** and run:
 ```powershell
 dotnet run --project src/ParentalControl.Service
@@ -131,7 +140,7 @@ dotnet run --project src/ParentalControl.Service
 - Launches the embedded web server on `http://localhost:5050`.
 - Connects to Telegram updates loop if configured.
 
-#### Step C: Run the Session Tray Agent
+#### Step D: Run the Session Tray Agent
 In a standard user terminal:
 ```powershell
 dotnet run --project src/ParentalControl.Agent
@@ -140,7 +149,7 @@ dotnet run --project src/ParentalControl.Agent
 - Hover to view live remaining minutes tooltip.
 - Right click -> "🎮 Request Screen Time..." opens `http://localhost:5050/request`.
 
-#### Step D: Test Browser Endpoints
+#### Step E: Test Browser Endpoints
 - **Brother Request Portal**: Open [http://localhost:5050/request](http://localhost:5050/request)
   - Displays remaining time, curfew, and request form.
   - Submitting sends a notification to your Telegram and records a pending request.
