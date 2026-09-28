@@ -51,7 +51,9 @@ Name: "{commondesktop}\{#MyAppName}"; Filename: "{app}\admin\{#MyAppExeName}"; \
     IconFilename: "{app}\admin\{#MyAppExeName}"; Comment: "Launch Parental Control Admin"
 
 [UninstallRun]
-; Stop and delete the service before files are removed
+; Stop agent and delete the service before files are removed
+Filename: "taskkill"; Parameters: "/F /IM {#AgentExeName}"; \
+    RunOnceId: "StopAgent"; Flags: runhidden waituntilterminated
 Filename: "sc"; Parameters: "stop {#ServiceName}"; \
     RunOnceId: "StopService"; Flags: runhidden waituntilterminated
 Filename: "sc"; Parameters: "delete {#ServiceName}"; \
