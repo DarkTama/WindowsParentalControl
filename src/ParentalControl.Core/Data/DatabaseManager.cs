@@ -64,8 +64,48 @@ public static class DatabaseManager
                 user_id INTEGER NOT NULL,
                 date TEXT NOT NULL,
                 minutes_used INTEGER NOT NULL DEFAULT 0,
+                bonus_minutes INTEGER NOT NULL DEFAULT 0,
                 PRIMARY KEY (user_id, date),
                 FOREIGN KEY (user_id) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS schedule_days (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                day_of_week INTEGER NOT NULL,
+                daily_minutes INTEGER NOT NULL DEFAULT 120,
+                schedule_start TEXT NOT NULL DEFAULT '08:00',
+                schedule_end TEXT NOT NULL DEFAULT '22:00',
+                UNIQUE(user_id, day_of_week),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS grace_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                date TEXT NOT NULL,
+                requested_minutes INTEGER NOT NULL,
+                reason TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'PENDING',
+                created_at TEXT NOT NULL,
+                resolved_at TEXT,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS app_usage (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                date TEXT NOT NULL,
+                process_name TEXT NOT NULL,
+                window_title TEXT NOT NULL DEFAULT '',
+                minutes INTEGER NOT NULL DEFAULT 0,
+                UNIQUE(user_id, date, process_name),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS events (
@@ -78,8 +118,21 @@ public static class DatabaseManager
 
             CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events (timestamp);
             CREATE INDEX IF NOT EXISTS idx_events_user_timestamp ON events (user_sid, timestamp);
+            CREATE INDEX IF NOT EXISTS idx_grace_user_date ON grace_requests (user_id, date);
+            CREATE INDEX IF NOT EXISTS idx_app_usage_user_date ON app_usage (user_id, date);
             """;
         schemaCmd.ExecuteNonQuery();
+
+        // Migration: check if bonus_minutes exists in existing usage table
+        using var checkColCmd = connection.CreateCommand();
+        checkColCmd.CommandText = "SELECT COUNT(*) FROM pragma_table_info('usage') WHERE name = 'bonus_minutes';";
+        var count = Convert.ToInt32(checkColCmd.ExecuteScalar());
+        if (count == 0)
+        {
+            using var alterCmd = connection.CreateCommand();
+            alterCmd.CommandText = "ALTER TABLE usage ADD COLUMN bonus_minutes INTEGER NOT NULL DEFAULT 0;";
+            alterCmd.ExecuteNonQuery();
+        }
     }
 
     public static SqliteConnection CreateConnection()

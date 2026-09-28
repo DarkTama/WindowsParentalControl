@@ -9,7 +9,7 @@ public static class UsageRepository
     {
         using var connection = DatabaseManager.CreateConnection();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "SELECT user_id, date, minutes_used FROM usage WHERE user_id = @userId AND date = @date";
+        cmd.CommandText = "SELECT user_id, date, minutes_used, bonus_minutes FROM usage WHERE user_id = @userId AND date = @date";
         cmd.Parameters.AddWithValue("@userId", userId);
         cmd.Parameters.AddWithValue("@date", date.ToString("yyyy-MM-dd"));
 
@@ -24,10 +24,26 @@ public static class UsageRepository
         using var connection = DatabaseManager.CreateConnection();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO usage (user_id, date, minutes_used)
-            VALUES (@userId, @date, @minutes)
+            INSERT INTO usage (user_id, date, minutes_used, bonus_minutes)
+            VALUES (@userId, @date, @minutes, 0)
             ON CONFLICT(user_id, date) DO UPDATE SET
                 minutes_used = minutes_used + @minutes
+            """;
+        cmd.Parameters.AddWithValue("@userId", userId);
+        cmd.Parameters.AddWithValue("@date", date.ToString("yyyy-MM-dd"));
+        cmd.Parameters.AddWithValue("@minutes", minutes);
+        cmd.ExecuteNonQuery();
+    }
+
+    public static void AddBonusMinutes(int userId, DateOnly date, int minutes)
+    {
+        using var connection = DatabaseManager.CreateConnection();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO usage (user_id, date, minutes_used, bonus_minutes)
+            VALUES (@userId, @date, 0, @minutes)
+            ON CONFLICT(user_id, date) DO UPDATE SET
+                bonus_minutes = bonus_minutes + @minutes
             """;
         cmd.Parameters.AddWithValue("@userId", userId);
         cmd.Parameters.AddWithValue("@date", date.ToString("yyyy-MM-dd"));
@@ -40,8 +56,8 @@ public static class UsageRepository
         using var connection = DatabaseManager.CreateConnection();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            INSERT INTO usage (user_id, date, minutes_used)
-            VALUES (@userId, @date, @minutes)
+            INSERT INTO usage (user_id, date, minutes_used, bonus_minutes)
+            VALUES (@userId, @date, @minutes, 0)
             ON CONFLICT(user_id, date) DO UPDATE SET
                 minutes_used = @minutes
             """;
@@ -56,7 +72,7 @@ public static class UsageRepository
         using var connection = DatabaseManager.CreateConnection();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
-            SELECT user_id, date, minutes_used FROM usage
+            SELECT user_id, date, minutes_used, bonus_minutes FROM usage
             WHERE user_id = @userId AND date >= @from AND date <= @to
             ORDER BY date
             """;
@@ -88,7 +104,8 @@ public static class UsageRepository
         {
             UserId = reader.GetInt32(0),
             Date = DateOnly.Parse(reader.GetString(1)),
-            MinutesUsed = reader.GetInt32(2)
+            MinutesUsed = reader.GetInt32(2),
+            BonusMinutes = reader.FieldCount > 3 && !reader.IsDBNull(3) ? reader.GetInt32(3) : 0
         };
     }
 }
