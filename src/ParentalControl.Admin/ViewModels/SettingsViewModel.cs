@@ -83,13 +83,19 @@ public partial class SettingsViewModel : ObservableObject
         }
 
         TestStatus = "Sending test message...";
+        if (TelegramChatId.Trim().StartsWith("@"))
+        {
+            TestStatus = "⚠️ Telegram requires numeric Chat ID (e.g. 123456789), not @username.";
+            return;
+        }
+
         try
         {
             using var client = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-            var url = $"https://api.telegram.org/bot{TelegramBotToken}/sendMessage";
+            var url = $"https://api.telegram.org/bot{TelegramBotToken.Trim()}/sendMessage";
             var payload = new
             {
-                chat_id = TelegramChatId,
+                chat_id = TelegramChatId.Trim(),
                 text = "🔔 *Parental Control Test Message*\nTelegram alerts are working properly on " + Environment.MachineName,
                 parse_mode = "Markdown"
             };
@@ -102,8 +108,56 @@ public partial class SettingsViewModel : ObservableObject
             }
             else
             {
-                TestStatus = $"❌ Telegram returned error: {res.StatusCode}";
+                var errorBody = await res.Content.ReadAsStringAsync();
+                try
+                {
+                    var errDoc = System.Text.Json.Nodes.JsonNode.Parse(errorBody);
+                    var desc = errDoc?["description"]?.ToString();
+                    TestStatus = $"❌ Telegram error: {desc ?? res.StatusCode.ToString()}";
+                }
+                catch
+                {
+                    TestStatus = $"❌ Telegram returned error: {res.StatusCode}";
+                }
             }
+        }
+        catch (Exception ex)
+        {
+            TestStatus = $"❌ Error: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private async Task DetectChatId()
+    {
+        if (string.IsNullOrWhiteSpace(TelegramBotToken))
+        {
+            TestStatus = "⚠️ Enter Bot Token first.";
+            return;
+        }
+
+        TestStatus = "Checking for messages to bot...";
+        try
+        {
+            using var client = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+            var url = $"https://api.telegram.org/bot{TelegramBotToken.Trim()}/getUpdates";
+            var res = await client.GetStringAsync(url);
+            var doc = System.Text.Json.Nodes.JsonNode.Parse(res);
+            var results = doc?["result"]?.AsArray();
+            if (results != null && results.Count > 0)
+            {
+                var lastMsg = results.LastOrDefault(u => u?["message"] != null)?["message"];
+                var from = lastMsg?["from"];
+                var detectedId = from?["id"]?.ToString();
+                var detectedUser = from?["username"]?.ToString() ?? from?["first_name"]?.ToString();
+                if (!string.IsNullOrEmpty(detectedId))
+                {
+                    TelegramChatId = detectedId;
+                    TestStatus = $"✅ Detected ID {detectedId} for {detectedUser}!";
+                    return;
+                }
+            }
+            TestStatus = "⚠️ No messages found. Open bot in Telegram & send /start first!";
         }
         catch (Exception ex)
         {
