@@ -44,26 +44,37 @@ public partial class MainViewModel : ObservableObject
         try
         {
             using var sc = new ServiceController(ServiceName);
-            sc.Refresh();
             if (sc.Status == ServiceControllerStatus.Running)
             {
                 ServiceStatusText = "Service: Up";
                 ServiceStatusColor = Brushes.Green;
                 IsServiceRunning = true;
-            }
-            else
-            {
-                ServiceStatusText = "Service: Down";
-                ServiceStatusColor = Brushes.Red;
-                IsServiceRunning = false;
+                return;
             }
         }
-        catch (InvalidOperationException)
+        catch
         {
-            ServiceStatusText = "Service: Down";
-            ServiceStatusColor = Brushes.Red;
-            IsServiceRunning = false;
+            // Service not registered in Windows Service Manager (e.g. running in console / dev mode)
         }
+
+        try
+        {
+            var processes = System.Diagnostics.Process.GetProcessesByName("ParentalControl.Service");
+            if (processes.Length > 0)
+            {
+                ServiceStatusText = "Service: Up (Console)";
+                ServiceStatusColor = Brushes.Green;
+                IsServiceRunning = true;
+                return;
+            }
+        }
+        catch
+        {
+        }
+
+        ServiceStatusText = "Service: Down";
+        ServiceStatusColor = Brushes.Red;
+        IsServiceRunning = false;
     }
 
     private void NavigateToUserDetail(UserRow user)
