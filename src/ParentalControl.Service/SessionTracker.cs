@@ -65,25 +65,29 @@ public sealed class SessionTracker
             return;
         }
 
-        var limit = LimitRepository.GetByUserId(user.Id);
+        var nowTime = TimeOnly.FromDateTime(DateTime.Now);
+        var dayOfWeek = DateTime.Now.DayOfWeek;
+        var limit = ScheduleRepository.GetEffectiveLimit(user.Id, dayOfWeek);
         UsageRecord? usage = null;
         if (limit is not null)
         {
-            var now = TimeOnly.FromDateTime(DateTime.Now);
-            if (now < limit.ScheduleStart || now >= limit.ScheduleEnd)
+            if (nowTime < limit.ScheduleStart || nowTime >= limit.ScheduleEnd)
             {
                 _logger.Information("Login denied (outside schedule): {Username}", username);
                 EventRepository.LogEvent(sid, EventType.LOGIN_DENIED, "Outside allowed schedule");
+                NotificationManager.SendMessage(sessionId, "Parental Control", "Login denied: Outside allowed schedule hours.", isWarning: true, timeoutSeconds: 5);
                 SessionManager.ForceLogoff(sessionId);
                 return;
             }
 
             var today = DateOnly.FromDateTime(DateTime.Now);
             usage = UsageRepository.GetUsage(user.Id, today);
-            if (usage is not null && usage.MinutesUsed >= limit.DailyMinutes)
+            var totalAllowed = limit.DailyMinutes + (usage?.BonusMinutes ?? 0);
+            if (usage is not null && usage.MinutesUsed >= totalAllowed)
             {
                 _logger.Information("Login denied (limit reached): {Username}", username);
                 EventRepository.LogEvent(sid, EventType.LOGIN_DENIED, "Daily limit already reached");
+                NotificationManager.SendMessage(sessionId, "Parental Control", "Login denied: Daily screen time limit reached.", isWarning: true, timeoutSeconds: 5);
                 SessionManager.ForceLogoff(sessionId);
                 return;
             }
@@ -94,8 +98,10 @@ public sealed class SessionTracker
         var loginDetail = "";
         if (limit is not null)
         {
-            var remaining = limit.DailyMinutes - (usage?.MinutesUsed ?? 0);
+            var totalAllowed = limit.DailyMinutes + (usage?.BonusMinutes ?? 0);
+            var remaining = Math.Max(0, totalAllowed - (usage?.MinutesUsed ?? 0));
             loginDetail = $"Remaining: {remaining / 60}h {remaining % 60}m";
+            NotificationManager.SendLogonBanner(sessionId, username, remaining, limit.ScheduleStart, limit.ScheduleEnd);
         }
         EventRepository.LogEvent(sid, EventType.LOGIN, loginDetail);
         _logger.Information("User logged in (restricted): {Username}", username);

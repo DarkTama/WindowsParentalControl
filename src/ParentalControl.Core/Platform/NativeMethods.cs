@@ -30,6 +30,23 @@ internal static class NativeMethods
         int version,
         out IntPtr ppSessionInfo,
         out int pCount);
+    internal const int MB_OK = 0x00000000;
+    internal const int MB_ICONWARNING = 0x00000030;
+    internal const int MB_ICONINFORMATION = 0x00000040;
+
+    [DllImport("wtsapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool WTSSendMessageW(
+        IntPtr hServer,
+        int sessionId,
+        string pTitle,
+        int titleLength,
+        string pMessage,
+        int messageLength,
+        int style,
+        int timeout,
+        out int pResponse,
+        [MarshalAs(UnmanagedType.Bool)] bool bWait);
 
     internal enum WTS_INFO_CLASS
     {
