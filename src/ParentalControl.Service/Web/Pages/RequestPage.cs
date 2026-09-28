@@ -5,13 +5,20 @@ public static class RequestPage
     public static string Render(string username, int remainingMinutes, string curfew, bool isOffline, bool hasPendingOrDoneRequest, string? existingStatus)
     {
         var offlineAlert = isOffline
-            ? """<div class="banner banner-error">⚠️ Home PC is currently offline. Cannot send requests to the administrator.</div>"""
+            ? """<div class="banner banner-error">⚠️ Komputer sedang offline. Permintaan hanya dapat dikirim saat terhubung ke internet.</div>"""
             : "";
+
+        var statusLabel = existingStatus switch
+        {
+            "PENDING" => "Menunggu Persetujuan",
+            "APPROVED" => "Disetujui",
+            "DECLINED" => "Ditolak",
+            _ => existingStatus ?? ""
+        };
 
         var alreadySubmittedAlert = hasPendingOrDoneRequest
-            ? $"""<div class="banner banner-info">ℹ️ You have already submitted a request today (Status: <strong>{existingStatus}</strong>). Only one request is allowed per day.</div>"""
+            ? $"""<div class="banner banner-info">ℹ️ Anda sudah mengirim permintaan hari ini (Status: <strong>{statusLabel}</strong>). Hanya 1 permintaan yang diizinkan per hari.</div>"""
             : "";
-
         var disableForm = isOffline || hasPendingOrDoneRequest;
         var disabledAttr = disableForm ? "disabled" : "";
 
@@ -21,7 +28,7 @@ public static class RequestPage
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Parental Control — Request Screen Time</title>
+            <title>Parental Control — Minta Tambahan Waktu Layar</title>
             <style>
                 * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
                 body { background: #0f172a; color: #f8fafc; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 1rem; }
@@ -52,17 +59,17 @@ public static class RequestPage
         </head>
         <body>
             <div class="card">
-                <h1>🎮 Request Extra Screen Time</h1>
-                <div class="user-badge">User: <strong>{{username}}</strong></div>
+                <h1>🎮 Minta Tambahan Waktu Layar</h1>
+                <div class="user-badge">Pengguna: <strong>{{username}}</strong></div>
 
                 <div class="stats-grid">
                     <div class="stat-box">
-                        <div class="val">{{remainingMinutes}} min</div>
-                        <div class="lbl">Remaining Today</div>
+                        <div class="val">{{remainingMinutes}} menit</div>
+                        <div class="lbl">Sisa Waktu Hari Ini</div>
                     </div>
                     <div class="stat-box">
                         <div class="val">{{curfew}}</div>
-                        <div class="lbl">Schedule Curfew</div>
+                        <div class="lbl">Batas Jam Malam</div>
                     </div>
                 </div>
 
@@ -72,26 +79,23 @@ public static class RequestPage
                 <div id="feedback"></div>
 
                 <form id="requestForm" onsubmit="submitForm(event)">
-                    <label>Requested Extension:</label>
+                    <label>Pilihan Tambahan Waktu:</label>
                     <div class="radio-group">
                         <div class="radio-btn">
                             <input type="radio" id="m15" name="minutes" value="15" checked {{disabledAttr}}>
-                            <label for="m15">+15m</label>
-                        </div>
+                            <label for="m15">+15 Menit</label>
                         <div class="radio-btn">
                             <input type="radio" id="m30" name="minutes" value="30" {{disabledAttr}}>
-                            <label for="m30">+30m</label>
-                        </div>
+                            <label for="m30">+30 Menit</label>
                         <div class="radio-btn">
                             <input type="radio" id="m60" name="minutes" value="60" {{disabledAttr}}>
-                            <label for="m60">+1h</label>
-                        </div>
+                            <label for="m60">+1 Jam</label>
                     </div>
 
-                    <label for="reason">Reason for extension:</label>
-                    <textarea id="reason" name="reason" placeholder="e.g. In the middle of an online match, finishing school project..." required {{disabledAttr}}></textarea>
+                    <label for="reason">Alasan meminta tambahan waktu:</label>
+                    <textarea id="reason" name="reason" placeholder="Contoh: Sedang bermain game dengan teman, menyelesaikan tugas sekolah..." required {{disabledAttr}}></textarea>
 
-                    <button type="submit" id="submitBtn" {{disabledAttr}}>Send Request to Admin</button>
+                    <button type="submit" id="submitBtn" {{disabledAttr}}>Kirim Permintaan ke Admin</button>
                 </form>
             </div>
 
@@ -101,7 +105,7 @@ public static class RequestPage
                     const btn = document.getElementById('submitBtn');
                     const feedback = document.getElementById('feedback');
                     btn.disabled = true;
-                    btn.innerText = 'Sending...';
+                    btn.innerText = 'Mengirim...';
 
                     const minutes = document.querySelector('input[name="minutes"]:checked').value;
                     const reason = document.getElementById('reason').value;
@@ -120,16 +124,16 @@ public static class RequestPage
                             document.getElementById('requestForm').style.display = 'none';
                         } else {
                             feedback.className = 'banner banner-error';
-                            feedback.innerHTML = '❌ ' + (data.error || 'Failed to submit request.');
+                            feedback.innerHTML = '❌ ' + (data.error || 'Gagal mengirim permintaan.');
                             btn.disabled = false;
-                            btn.innerText = 'Send Request to Admin';
+                            btn.innerText = 'Kirim Permintaan ke Admin';
                         }
                     } catch (err) {
                         feedback.style.display = 'block';
                         feedback.className = 'banner banner-error';
-                        feedback.innerHTML = '❌ Connection failed.';
+                        feedback.innerHTML = '❌ Gagal terhubung ke layanan.';
                         btn.disabled = false;
-                        btn.innerText = 'Send Request to Admin';
+                        btn.innerText = 'Kirim Permintaan ke Admin';
                     }
                 }
             </script>

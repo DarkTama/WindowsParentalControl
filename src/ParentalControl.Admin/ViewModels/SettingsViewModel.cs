@@ -1,3 +1,5 @@
+using System.IO;
+using System.Windows.Media.Imaging;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -30,6 +32,12 @@ public partial class SettingsViewModel : ObservableObject
     private string _totpUri = string.Empty;
 
     [ObservableProperty]
+    private BitmapSource? _totpQrImage;
+
+    [ObservableProperty]
+    private bool _hasQrCode;
+
+    [ObservableProperty]
     private string _testStatus = string.Empty;
 
     public SettingsViewModel(Action navigateBack)
@@ -45,10 +53,11 @@ public partial class SettingsViewModel : ObservableObject
         AlertIntervals = SettingsRepository.Get(SettingsRepository.KeyAlertIntervals, "15,5,1");
         IsTotpEnabled = SettingsRepository.Get(SettingsRepository.KeyTotpEnabled, "false") == "true";
         TotpSecret = SettingsRepository.Get(SettingsRepository.KeyTotpSecret);
-
-        if (!string.IsNullOrEmpty(TotpSecret))
+        TotpSecret = SettingsRepository.Get(SettingsRepository.KeyTotpSecret);
+        if (!string.IsNullOrWhiteSpace(TotpSecret))
         {
             TotpUri = TotpService.GenerateOtpauthUri("ParentalControl", Environment.MachineName, TotpSecret);
+            RefreshQrCode();
         }
     }
 
@@ -58,13 +67,51 @@ public partial class SettingsViewModel : ObservableObject
         _navigateBack();
     }
 
+    partial void OnTotpSecretChanged(string value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+        {
+            TotpUri = TotpService.GenerateOtpauthUri("ParentalControl", Environment.MachineName, value.Trim());
+        }
+        else
+        {
+            TotpUri = string.Empty;
+        }
+        RefreshQrCode();
+    }
+
     [RelayCommand]
     private void GenerateTotpSecret()
     {
         TotpSecret = TotpService.GenerateSecret();
-        TotpUri = TotpService.GenerateOtpauthUri("ParentalControl", Environment.MachineName, TotpSecret);
     }
 
+    private void RefreshQrCode()
+    {
+        if (!string.IsNullOrWhiteSpace(TotpUri))
+        {
+            try
+            {
+                var pngBytes = TotpService.GenerateQrCodePng(TotpUri, 6);
+                var image = new BitmapImage();
+                using var ms = new MemoryStream(pngBytes);
+                image.BeginInit();
+                image.CacheOption = BitmapCacheOption.OnLoad;
+                image.StreamSource = ms;
+                image.EndInit();
+                image.Freeze();
+                TotpQrImage = image;
+                HasQrCode = true;
+                return;
+            }
+            catch
+            {
+            }
+        }
+
+        TotpQrImage = null;
+        HasQrCode = false;
+    }
     [RelayCommand]
     private async Task TestTelegram()
     {

@@ -16,7 +16,10 @@ Debug.Assert(uri.StartsWith("otpauth://totp/"), "URI should start with otpauth:/
 Debug.Assert(!TotpService.VerifyCode(secret, "000000"), "Random dummy code should fail");
 Debug.Assert(!TotpService.VerifyCode(secret, ""), "Empty code should fail");
 Debug.Assert(!TotpService.VerifyCode(secret, "12345"), "Short code should fail");
-Console.WriteLine("✅ TOTP Service Verification Passed.");
+var qrBytes = TotpService.GenerateQrCodePng(uri, 4);
+Debug.Assert(qrBytes != null && qrBytes.Length > 0, "QR Code PNG bytes should not be empty");
+Debug.Assert(qrBytes[0] == 0x89 && qrBytes[1] == 0x50 && qrBytes[2] == 0x4E && qrBytes[3] == 0x47, "QR should be valid PNG");
+Console.WriteLine("✅ TOTP Service & QR Generation Verification Passed.");
 var tempDir = Path.Combine(Path.GetTempPath(), "ParentalControlTest_" + Guid.NewGuid().ToString("N"));
 Environment.SetEnvironmentVariable("PARENTAL_CONTROL_DATA_DIR", tempDir);
 try

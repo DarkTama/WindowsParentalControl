@@ -204,8 +204,8 @@ public sealed class TelegramBotService
                 var userSession = activeSessions.FirstOrDefault(s => s.Sid == user.Sid);
                 if (userSession.Sid != null)
                 {
-                    NotificationManager.SendMessage(userSession.SessionId, "Parental Control — Extra Time Approved!",
-                        $"Good news! Your administrator approved +{bonusMins} minutes of screen time for today.",
+                    NotificationManager.SendMessage(userSession.SessionId, "Parental Control — Tambahan Waktu Disetujui!",
+                        $"Kabar baik! Administrator telah menyetujui tambahan waktu layar sebesar +{bonusMins} menit untuk hari ini.",
                         isWarning: false, timeoutSeconds: 20);
                 }
             }
@@ -226,8 +226,8 @@ public sealed class TelegramBotService
                 var userSession = activeSessions.FirstOrDefault(s => s.Sid == user.Sid);
                 if (userSession.Sid != null)
                 {
-                    NotificationManager.SendMessage(userSession.SessionId, "Parental Control — Request Declined",
-                        "Your request for additional screen time was declined by the administrator.",
+                    NotificationManager.SendMessage(userSession.SessionId, "Parental Control — Permintaan Ditolak",
+                        "Permintaan tambahan waktu layar Anda ditolak oleh administrator.",
                         isWarning: true, timeoutSeconds: 15);
                 }
             }

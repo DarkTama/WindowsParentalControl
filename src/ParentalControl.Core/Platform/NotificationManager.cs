@@ -35,33 +35,33 @@ public static class NotificationManager
     {
         var hours = allowedMinutes / 60;
         var mins = allowedMinutes % 60;
-        var timeStr = hours > 0 ? $"{hours}h {mins}m" : $"{mins}m";
+        var timeStr = hours > 0 ? $"{hours} jam {mins} menit" : $"{mins} menit";
 
-        var title = "Parental Control — Session Active";
-        var msg = $"Welcome, {username}!\n\n"
-                + $"• Daily Allowance: {timeStr}\n"
-                + $"• Permitted Hours: {start:HH:mm} – {end:HH:mm}\n\n"
-                + "You will receive warning alerts before your session time expires.";
+        var title = "Parental Control — Sesi Aktif";
+        var msg = $"Halo, {username}!\n\n"
+                + $"• Jatah Waktu Layar Hari Ini: {timeStr}\n"
+                + $"• Jam Yang Diizinkan: {start:HH:mm} – {end:HH:mm}\n\n"
+                + "Anda akan menerima peringatan otomatis sebelum waktu sesi habis.";
 
         SendMessage(sessionId, title, msg, isWarning: false, timeoutSeconds: 20);
     }
 
     public static void SendWarning(int sessionId, int minutesRemaining)
     {
-        var title = "Parental Control — Time Alert";
+        var title = "Parental Control — Peringatan Waktu Layar";
         var msg = minutesRemaining <= 1
-            ? "⚠️ FINAL WARNING: You have 1 MINUTE left!\nSave all work and games immediately. This session will be logged off."
-            : $"⚠️ WARNING: You have {minutesRemaining} minutes of screen time remaining today.";
+            ? "⚠️ PERINGATAN TERAKHIR: Sisa waktu layar Anda tinggal 1 MENIT!\nSegera simpan game dan semua pekerjaan Anda. Sesi akan otomatis keluar."
+            : $"⚠️ PERINGATAN: Sisa waktu layar Anda hari ini tinggal {minutesRemaining} menit.";
 
         SendMessage(sessionId, title, msg, isWarning: true, timeoutSeconds: 30);
     }
 
     public static void SendCurfewWarning(int sessionId, int minutesRemaining, TimeOnly curfewTime)
     {
-        var title = "Parental Control — Schedule Curfew Alert";
+        var title = "Parental Control — Peringatan Jam Malam";
         var msg = minutesRemaining <= 1
-            ? $"⚠️ FINAL WARNING: Curfew at {curfewTime:HH:mm} is in 1 MINUTE!\nSave all work now. Your session will close."
-            : $"⚠️ WARNING: Your allowed schedule ends at {curfewTime:HH:mm} ({minutesRemaining} minutes remaining).";
+            ? $"⚠️ PERINGATAN TERAKHIR: Jam malam pukul {curfewTime:HH:mm} tinggal 1 MENIT lagi!\nSegera simpan pekerjaan Anda. Sesi akan ditutup."
+            : $"⚠️ PERINGATAN: Batas jam malam berakhir pada pukul {curfewTime:HH:mm} (sisa {minutesRemaining} menit).";
 
         SendMessage(sessionId, title, msg, isWarning: true, timeoutSeconds: 30);
     }

@@ -104,7 +104,7 @@ public sealed class WebServerHost : BackgroundService
 
                 if (minutes <= 0 || minutes > 120 || string.IsNullOrWhiteSpace(reason))
                 {
-                    return Results.BadRequest(new { error = "Invalid minutes or reason required." });
+                    return Results.BadRequest(new { error = "Jumlah menit tidak valid atau alasan harus diisi." });
                 }
 
                 var today = DateOnly.FromDateTime(DateTime.Now);
@@ -117,14 +117,21 @@ public sealed class WebServerHost : BackgroundService
 
                 if (user == null)
                 {
-                    return Results.BadRequest(new { error = "User not found." });
+                    return Results.BadRequest(new { error = "Pengguna tidak ditemukan." });
                 }
 
                 // Check 1-per-day rule
                 var existing = GraceRequestRepository.GetTodayRequest(user.Id, today);
                 if (existing != null)
                 {
-                    return Results.BadRequest(new { error = $"You have already submitted a request today (Status: {existing.Status})." });
+                    var statusLabel = existing.Status switch
+                    {
+                        "PENDING" => "Menunggu Persetujuan",
+                        "APPROVED" => "Disetujui",
+                        "DECLINED" => "Ditolak",
+                        _ => existing.Status
+                    };
+                    return Results.BadRequest(new { error = $"Anda sudah mengirim permintaan hari ini (Status: {statusLabel})." });
                 }
 
                 // Check internet
@@ -139,12 +146,12 @@ public sealed class WebServerHost : BackgroundService
                 // Dispatch Telegram alert
                 _ = _telegramBotService.SendGraceRequestAlertAsync(req, user.Username);
 
-                return Results.Ok(new { success = true, message = $"Request for +{minutes}m submitted to administrator." });
+                return Results.Ok(new { success = true, message = $"Permintaan tambahan waktu +{minutes} menit berhasil dikirim ke administrator." });
             }
             catch (Exception ex)
             {
                 _logger.Error(ex, "Failed to process grace request submission");
-                return Results.BadRequest(new { error = "Invalid request payload." });
+                return Results.BadRequest(new { error = "Permintaan tidak valid." });
             }
         });
 

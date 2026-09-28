@@ -20,6 +20,13 @@ public static class TotpService
         var escapedAccount = Uri.EscapeDataString(account);
         return $"otpauth://totp/{escapedIssuer}:{escapedAccount}?secret={secret}&issuer={escapedIssuer}&algorithm=SHA1&digits=6&period=30";
     }
+    public static byte[] GenerateQrCodePng(string uri, int pixelsPerModule = 5)
+    {
+        using var qrGenerator = new QRCoder.QRCodeGenerator();
+        using var qrCodeData = qrGenerator.CreateQrCode(uri, QRCoder.QRCodeGenerator.ECCLevel.M);
+        var qrCode = new QRCoder.PngByteQRCode(qrCodeData);
+        return qrCode.GetGraphic(pixelsPerModule);
+    }
 
     public static bool VerifyCode(string secret, string code, int allowedDrift = 1)
     {

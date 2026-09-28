@@ -56,13 +56,13 @@ public sealed class TrayApplicationContext : ApplicationContext
     {
         var menu = new ContextMenuStrip();
 
-        var titleItem = new ToolStripMenuItem(_currentUser != null ? $"User: {_currentUser.Username}" : "Parental Control")
+        var titleItem = new ToolStripMenuItem(_currentUser != null ? $"Pengguna: {_currentUser.Username}" : "Parental Control")
         {
             Enabled = false
         };
         menu.Items.Add(titleItem);
 
-        var requestItem = new ToolStripMenuItem("🎮 Request Screen Time...", null, (s, e) =>
+        var requestItem = new ToolStripMenuItem("🎮 Minta Tambahan Waktu Layar...", null, (s, e) =>
         {
             try
             {
@@ -75,7 +75,7 @@ public sealed class TrayApplicationContext : ApplicationContext
         if (_isAdmin)
         {
             menu.Items.Add(new ToolStripSeparator());
-            var exitItem = new ToolStripMenuItem("Exit Agent", null, (s, e) =>
+            var exitItem = new ToolStripMenuItem("Keluar dari Agent", null, (s, e) =>
             {
                 _notifyIcon.Visible = false;
                 Application.Exit();
@@ -96,7 +96,7 @@ public sealed class TrayApplicationContext : ApplicationContext
 
         if (!_currentUser.IsRestricted)
         {
-            _notifyIcon.Text = "Parental Control: Unrestricted Account";
+            _notifyIcon.Text = "Parental Control: Akun Tidak Dibatasi";
             return;
         }
 
@@ -114,7 +114,7 @@ public sealed class TrayApplicationContext : ApplicationContext
             var remaining = Math.Max(0, totalAllowed - (usage?.MinutesUsed ?? 0));
             var hours = remaining / 60;
             var mins = remaining % 60;
-            var text = hours > 0 ? $"{hours}h {mins}m remaining" : $"{mins}m remaining";
+            var text = hours > 0 ? $"Sisa {hours} jam {mins} mnt" : $"Sisa {mins} mnt";
 
             // NotifyIcon Text limit is 63 chars
             var tooltip = $"Parental Control: {text}".Trim();
