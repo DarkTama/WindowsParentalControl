@@ -1,306 +1,193 @@
-# Parental Control for Windows
+# Parental Control for Windows (DarkTama Edition)
 
-> **Vibe Coded Disclaimer**
->
-> This application was entirely vibe coded using **Claude Code with Claude Opus 4.6 (High)** and should be treated as such. The code was generated through conversational AI-assisted development — no line was hand-written. While functional and tested on the developer's machine, it has not undergone formal code review, security audit, or extensive QA. Use at your own discretion, review the source before deploying in any sensitive environment, and expect rough edges.
-
-## Download
-
-Download the latest installer (`ParentalControlSetup.exe`) from the [GitHub Releases page](https://github.com/robertpin/WindowsParentalControl/releases). Run it as administrator and follow the on-screen instructions.
+An enhanced screen time and schedule curfew management system for Windows 10/11 local accounts. Extended from `robertpin/WindowsParentalControl` with 7-day schedule matrixes, unskippable in-session Win32 warning dialogs, Telegram Bot mobile interactive approvals, an embedded Kestrel Web Admin secured by Authenticator TOTP over LAN/Tailscale, and a lightweight Session Agent for foreground game/app activity logging and tray countdown.
 
 ---
 
-## What Is This?
+## Key Features
 
-Parental Control is a **Windows desktop application** that lets administrators enforce screen time limits and usage schedules on local Windows user accounts. It consists of two components:
+### 1. 7-Day Weekly Schedule Matrix
+- Configure custom daily minute quotas and permitted schedule windows for every day of the week (Sunday through Saturday).
+- Differentiate between school days (e.g. 60 min, curfew 20:00) and weekends (e.g. 180 min, curfew 23:00).
+- Automatic fallback to default limits if a specific weekday is omitted.
 
-- **Admin UI** — a WPF desktop app where you configure per-user time limits and schedules, view usage, and monitor events.
-- **Background Service** — a Windows Service that runs silently, tracks active sessions, enforces limits, and forcefully logs users off when they exceed their allowed time or fall outside their permitted schedule.
+### 2. Unskippable In-Session Modal Warnings
+- Service dispatches native Win32 `WTSSendMessage` modal dialogs directly from `LocalSystem` into the user's active session.
+- Displays session welcome banner at logon with daily quota and curfew hours.
+- Automatic countdown warnings at 15m, 5m, and 1m remaining before forced logoff.
+- Cannot be silenced, hidden, or suppressed by Windows Focus Assist / Do Not Disturb.
 
----
+### 3. Remote Grace Time Requests via Telegram
+- Brother clicks "Request Screen Time..." in the taskbar tray or opens `http://localhost:5050/request`.
+- Selects extension (+15m, +30m, +1h) and enters a reason.
+- Strictly limited to 1 submission per restricted user per calendar day.
+- Offline-safe: request form verifies internet connectivity and disables submission if the home PC is offline.
+- Sends an interactive alert to your private Telegram chat with 1-tap buttons: `[Approve 15m]`, `[Approve 30m]`, `[Decline]`.
+- Approval automatically credits bonus minutes to today's usage without altering permanent limits and pops an approval notification on the brother's screen.
 
-## Features
+### 4. Embedded Web Admin & Authenticator 2FA (RFC 6238 TOTP)
+- Background service hosts an embedded lightweight Kestrel web server on `http://0.0.0.0:5050` (accessible over local network or Tailscale VPN).
+- Protected by Authenticator TOTP (Google Authenticator, Microsoft Authenticator, 1Password) with constant-time equality checks.
+- Monitor active sessions, view real-time remaining minutes, trigger manual 1-click bonuses or emergency logoffs from your phone.
 
-### User Management
-- Automatically discovers all local Windows user accounts
-- Filters out built-in system accounts (DefaultAccount, WDAGUtilityAccount, Guest)
-- Distinguishes between standard users and administrators
-- Administrator accounts are protected — they cannot be restricted (displayed as read-only in the UI)
-
-### Daily Time Limits
-- Set a maximum number of minutes per day for each user (default: 120 minutes)
-- Usage is tracked in real time, accumulating every 60 seconds
-- Administrators can directly edit a user's current daily usage from the Admin UI (useful for granting extra time or correcting usage)
-- Resets automatically at midnight
-
-### Schedule Windows
-- Define allowed hours for each user (e.g., 08:00 to 22:00)
-- Users are forcefully logged off if they are still logged in when their schedule window closes
-- Login attempts outside the schedule window are denied
-
-### Automatic Enforcement
-- The background service checks all active sessions every 60 seconds
-- If a user exceeds their daily limit, they are immediately logged off
-- If a user is logged in outside their allowed schedule, they are immediately logged off
-- Login attempts are blocked if the user has already exhausted their daily limit or is outside their schedule
-
-### Event & Audit Logging
-All enforcement actions are logged with timestamps, user SIDs, and details:
-
-| Event Type | Description |
-|---|---|
-| `LOGIN` | User logged in successfully |
-| `LOGOUT` | User logged out |
-| `SLEEP` | System entered sleep mode |
-| `WAKE` | System resumed from sleep |
-| `LIMIT_REACHED` | Daily usage limit was reached |
-| `FORCED_LOGOUT` | User was forcefully logged off |
-| `LOGIN_DENIED` | Login attempt was rejected |
-| `CLOCK_TAMPER` | System clock manipulation was detected |
-
-### Clock Tamper Detection
-- Detects when the system clock is set backwards (e.g., a user trying to gain extra screen time)
-- Immediately fills the restricted user's daily usage to their maximum allowed minutes, locking them out for the rest of the day
-- Forces the user off the system
-- Logs a `CLOCK_TAMPER` event with timestamps showing the time reversal
-
-### Sleep/Wake Awareness
-- Usage tracking pauses when the system enters sleep mode
-- Resumes accurately on wake — sleep time is not counted against the user
-- All active session times are flushed to the database before sleep
-- Retroactively detects undetected sleep/hibernate events by identifying gaps in session activity greater than 2 minutes
-
-### Data Retention
-- Events and usage records older than 30 days are automatically deleted
-- Cleanup runs daily at midnight
-- Keeps the database size manageable over time
-
-### Security
-- The `C:\ProgramData\ParentalControl\` directory is locked via ACLs to SYSTEM and Administrators only
-- Restricted users cannot directly access or modify the database
-
-### Service Status Monitoring
-- The admin UI polls the Windows Service status every 5 seconds
-- Displays a green indicator when the service is running, red when it's down
+### 5. Session Tray Agent & Foreground App Logging
+- `ParentalControl.Agent.exe` runs silently in interactive user sessions.
+- Taskbar notification tray icon displays a live countdown of remaining screen time.
+- Samples `GetForegroundWindow()` every 60s to record active games and apps (e.g., `RobloxPlayerBeta.exe`, `chrome.exe`) and window titles into daily usage logs with 30-day retention.
 
 ---
 
 ## Architecture
 
 ```
-+---------------------------+       +---------------------------+
-|   ParentalControl.Admin   |       | ParentalControl.Service   |
-|   (WPF Desktop App)       |       | (Windows Service)         |
-|                           |       |                           |
-|  - Dashboard View         |       |  - Session Tracker        |
-|  - User Detail View       |       |  - Usage Monitor Worker   |
-|  - Service Status Monitor |       |  - Session Change Handler |
-+------------+--------------+       +------------+--------------+
-             |                                   |
-             |         Shared Library            |
-             +--------->  ParentalControl.Core <-+
-                        |                      |
-                        |  - Data Models       |
-                        |  - Repositories      |
-                        |  - Database Manager  |
-                        |  - Session Manager   |
-                        |  - Native Methods    |
-                        +----------+-----------+
-                                   |
-                            SQLite Database
-                   (C:\ProgramData\ParentalControl\data.db)
-```
-
-Both the Admin UI and the Service share the same SQLite database. When you change a user's limits in the Admin UI, the Service picks up those changes on its next 60-second tick.
-
----
-
-## Tech Stack
-
-| Component | Technology |
-|---|---|
-| UI Framework | WPF (Windows Presentation Foundation) |
-| UI Theme | Material Design Themes for WPF (Indigo/Amber) |
-| Architecture Pattern | MVVM (CommunityToolkit.Mvvm) |
-| Backend Service | .NET Worker Service (Windows Service) |
-| Database | SQLite (Microsoft.Data.Sqlite) |
-| Logging | Serilog (rolling file, 30-day retention) |
-| Platform Integration | Windows Terminal Services API (P/Invoke) |
-| Installer | Inno Setup 6 |
-| Target Framework | .NET 8.0 |
-| Target OS | Windows (x64 only) |
-
----
-
-## Project Structure
-
-```
-ParentalControl/
-├── src/
-│   ├── ParentalControl.Admin/           # WPF Admin UI
-│   │   ├── App.xaml(.cs)                # App startup, Material Design theme config
-│   │   ├── MainWindow.xaml(.cs)         # Main window with service status indicator
-│   │   ├── Views/
-│   │   │   ├── DashboardView.xaml(.cs)  # User list, admin list, recent events
-│   │   │   └── UserDetailView.xaml(.cs) # Per-user limits config and event history
-│   │   ├── ViewModels/
-│   │   │   ├── MainViewModel.cs         # Service polling, view navigation
-│   │   │   ├── DashboardViewModel.cs    # User discovery, event loading
-│   │   │   ├── UserDetailViewModel.cs   # Limit editing, validation, save/remove
-│   │   │   └── UserRow.cs              # Per-user presentation model
-│   │   ├── Helpers/
-│   │   │   └── DataGridScrollHelper.cs  # Shared DataGrid scroll behavior
-│   │   └── Services/
-│   │       └── UserDiscovery.cs         # Windows local user enumeration
-│   │
-│   ├── ParentalControl.Core/            # Shared library
-│   │   ├── Data/
-│   │   │   ├── DatabaseManager.cs       # SQLite initialization and schema
-│   │   │   ├── UserRepository.cs        # User CRUD
-│   │   │   ├── LimitRepository.cs       # Limit config CRUD
-│   │   │   ├── UsageRepository.cs       # Daily usage tracking
-│   │   │   └── EventRepository.cs       # Event logging and queries
-│   │   ├── Models/
-│   │   │   ├── User.cs                  # User model (Id, Sid, Username, IsRestricted)
-│   │   │   ├── LimitConfig.cs           # Limit model (DailyMinutes, ScheduleStart/End)
-│   │   │   ├── UsageRecord.cs           # Usage model (UserId, Date, MinutesUsed)
-│   │   │   ├── EventRecord.cs           # Event model (Timestamp, UserSid, EventType)
-│   │   │   └── EventType.cs             # Event type enum
-│   │   ├── Platform/
-│   │   │   ├── SessionManager.cs        # WTS API wrapper (sessions, force logoff)
-│   │   │   └── NativeMethods.cs         # P/Invoke for wtsapi32.dll
-│   │   └── Logging/
-│   │       └── LoggingConfig.cs         # Serilog configuration
-│   │
-│   └── ParentalControl.Service/         # Windows Service
-│       ├── Program.cs                   # Host setup, DI registration
-│       ├── ParentalControlServiceLifetime.cs  # Session change & power event handlers
-│       ├── SessionTracker.cs            # Active session tracking & enforcement
-│       └── UsageMonitorWorker.cs        # 60-second enforcement loop
-│
-├── installer/
-│   ├── ParentalControl.iss              # Inno Setup installer script
-│   └── Output/                          # Generated installer output
-│
-├── build.ps1                            # Build & package script
-├── icon.ico                             # Application icon
-├── ParentalControl.slnx                 # Solution file
-└── .gitignore
+                               +-----------------------------+
+                               |     Admin Mobile / Laptop   |
+                               |    (Tailscale / Telegram)   |
+                               +--------------+--------------+
+                                              |
+                     +------------------------+------------------------+
+                     | (Telegram Bot API)                              | (Web Admin :5050 + TOTP)
+                     v                                                 v
++-------------------------------------------------------------------------------+
+| ParentalControl.Service (Windows Service as LocalSystem, Session 0)           |
+|                                                                               |
+|  - UsageMonitorWorker (60s tick, schedule curfews, WTSSendMessage warnings)   |
+|  - SessionTracker (active session tracking, logon enforcement, clock tamper)  |
+|  - TelegramWorker (polls callback queries, grants bonus minutes)              |
+|  - WebServerHost (Kestrel :5050 — /request portal & /admin dashboard)        |
++------------------------------------+------------------------------------------+
+                                     |
+                                     | (Shared SQLite via WAL)
+                                     v
++-------------------------------------------------------------------------------+
+| ParentalControl.Core                                                          |
+|  - Database: C:\ProgramData\ParentalControl\data.db (ACL: SYSTEM & Admins)   |
+|  - Repositories: Users, Limits, Schedules, Usage, GraceRequests, AppUsage     |
+|  - Security: TotpService (RFC 6238 Base32 + constant-time verification)       |
+|  - Platform: SessionManager & NativeMethods (WTSSendMessage, WTSLogoff)       |
++------------------------------------+------------------------------------------+
+               ^                     ^                     ^
+               |                     |                     |
++--------------+-------------+       |       +-------------+--------------+
+| ParentalControl.Admin      |       |       | ParentalControl.Agent      |
+| (WPF Desktop Application)  |       |       | (Session Tray Helper)      |
+|                            |       |       |                            |
+| - Dashboard & Events       |       |       | - Live Tray Countdown      |
+| - 7-Day Schedule Matrix    |       |       | - 1-Click Request Launcher |
+| - Quick Grace Buttons      |       |       | - GetForegroundWindow      |
+| - Telegram & 2FA Settings  |       |       |   Active App Logger        |
++----------------------------+       |       +----------------------------+
+                                     |
+                                     v
+                 +---------------------------------------+
+                 | Brother's Interactive Session (User)  |
+                 | - Unskippable Modal System Dialogs    |
+                 | - Browser Request Portal (/request)   |
+                 +---------------------------------------+
 ```
 
 ---
 
-## Getting Started
+## How to Test Locally
 
-### Prerequisites
-
-- **Windows 10/11** (x64)
-- **.NET 8 SDK** — [Download](https://dotnet.microsoft.com/download/dotnet/8.0)
-- **Inno Setup 6** (for building the installer) — [Download](https://jrsoftware.org/isdownload.php)
-
-### Clone the Repository
-
-```bash
-git clone https://github.com/your-username/ParentalControl.git
-cd ParentalControl
-```
-
-### Running in Development
-
-To run the Admin UI directly during development:
-
-```bash
-dotnet run --project src/ParentalControl.Admin
-```
-
-To run the Service in console mode during development:
-
-```bash
-dotnet run --project src/ParentalControl.Service
-```
-
-> **Note:** The service needs to run with administrator privileges to track sessions and enforce logoffs. Right-click your terminal and "Run as Administrator" before starting the service.
-
-### Building the Installer
-
-The `build.ps1` script publishes both projects as self-contained win-x64 binaries and then invokes Inno Setup to create the installer:
+### 1. Run Automated Verification Tests
+Run the built-in assert verification suite to test database models, TOTP crypto, 1-per-day grace rules, and weekly schedule fallbacks:
 
 ```powershell
-.\build.ps1
+dotnet run --project tests/ParentalControl.Tests
 ```
 
-If the script fails with this error:
-
+Expected output:
 ```
-.\build.ps1 : File C:\Users\Robert\Desktop\ParentalControl\build.ps1 cannot be loaded because running scripts is
-disabled on this system. For more information, see about_Execution_Policies at
-https:/go.microsoft.com/fwlink/?LinkID=135170.
+=== Running ParentalControl Self-Checks ===
+✅ TOTP Service Verification Passed.
+✅ Settings Repository Verification Passed.
+✅ Grace Request Repository Verification Passed.
+✅ Usage and Bonus Minutes Verification Passed.
+✅ Weekly Schedule & Fallback Verification Passed.
+✅ Cleanup Completed.
+
+🎉 ALL ASSERTIONS PASSED SUCCESSFULLY!
 ```
 
-Run it with the execution policy bypassed:
+---
+
+### 2. Run in Development Mode
+
+#### Step A: Launch the Desktop Admin UI
+```powershell
+dotnet run --project src/ParentalControl.Admin
+```
+- Click on any standard user (e.g. `Dreitama` or `Dwiatama`).
+- Set 7-day limits, test quick grace buttons (`+15 min`, `+30 min`, `+1 hr`), or view logged app activity.
+- Open **⚙️ Settings** to configure your Telegram Bot credentials or setup Authenticator 2FA.
+
+#### Step B: Run the Background Service (Elevated)
+Open PowerShell as **Administrator** and run:
+```powershell
+dotnet run --project src/ParentalControl.Service
+```
+- Starts monitoring active sessions every 60 seconds.
+- Launches the embedded web server on `http://localhost:5050`.
+- Connects to Telegram updates loop if configured.
+
+#### Step C: Run the Session Tray Agent
+In a standard user terminal:
+```powershell
+dotnet run --project src/ParentalControl.Agent
+```
+- Shows shield icon in taskbar system tray.
+- Hover to view live remaining minutes tooltip.
+- Right click -> "🎮 Request Screen Time..." opens `http://localhost:5050/request`.
+
+#### Step D: Test Browser Endpoints
+- **Brother Request Portal**: Open [http://localhost:5050/request](http://localhost:5050/request)
+  - Displays remaining time, curfew, and request form.
+  - Submitting sends a notification to your Telegram and records a pending request.
+- **Web Admin Dashboard**: Open [http://localhost:5050/admin](http://localhost:5050/admin)
+  - Prompts for TOTP code if 2FA is enabled in Settings.
+  - View active sessions, grant extra minutes, or force logoffs remotely over Tailscale.
+
+---
+
+## Building Standalone Binaries Locally
+
+### Option 1: Publish Self-Contained `.exe` Binaries Directly
+Run `dotnet publish` for each component to generate standalone Windows x64 executables that run without requiring the .NET SDK installed:
+
+```powershell
+# 1. Publish Service
+dotnet publish src/ParentalControl.Service -c Release -r win-x64 --self-contained true -o publish/service
+
+# 2. Publish Admin UI
+dotnet publish src/ParentalControl.Admin -c Release -r win-x64 --self-contained true -o publish/admin
+
+# 3. Publish Session Agent
+dotnet publish src/ParentalControl.Agent -c Release -r win-x64 --self-contained true -o publish/agent
+```
+
+Binaries will be placed in:
+- `publish/service/ParentalControl.Service.exe`
+- `publish/admin/ParentalControl.Admin.exe`
+- `publish/agent/ParentalControl.Agent.exe`
+
+---
+
+### Option 2: Build Complete Inno Setup Installer
+If [Inno Setup 6](https://jrsoftware.org/isdownload.php) is installed, run the automated packaging script:
 
 ```powershell
 powershell.exe -ExecutionPolicy Bypass -File .\build.ps1
 ```
 
-The build produces:
-- `publish/service/` — Self-contained service binaries
-- `publish/admin/` — Self-contained admin UI binaries
-- `installer/Output/ParentalControlSetup.exe` — The installer
+The script publishes all three components and compiles the final setup executable:
+- `installer/Output/ParentalControlSetup.exe`
 
-### Installing
-
-Run `ParentalControlSetup.exe` as administrator. The installer will:
-
-1. Install files to `C:\Program Files\ParentalControl\`
-2. Register and start the `ParentalControl.Service` Windows Service (auto-start, runs as LocalSystem)
-3. Configure automatic service restart on failure (10s, 30s, 60s intervals)
-4. Create Start Menu and Desktop shortcuts for the Admin UI
-
-### Uninstalling
-
-Navigate to `C:\Program Files\ParentalControl\` and run `uninst000.exe`. This will launch the uninstaller, which will:
-
-- Stop and remove the `ParentalControl.Service` Windows Service
-- Remove all program files from `C:\Program Files\ParentalControl\`
-- Remove the database and logs from `C:\ProgramData\ParentalControl\`
-- Remove Start Menu and Desktop shortcuts
-
----
-
-## How It Works
-
-### Service Lifecycle
-
-1. **Startup** — The service initializes the SQLite database, recovers any existing active sessions, and begins the 60-second monitoring loop.
-2. **Session Change** — When a user logs on, the service checks their restrictions. If the user is outside their schedule or has exhausted their daily limit, login is denied (forced logoff). Otherwise, the session is tracked.
-3. **Monitoring Loop** — Every 60 seconds, the service iterates over all active sessions. For each restricted user, it increments their daily usage and checks limits. Violations trigger a forced logoff.
-4. **Logoff** — When a user logs off (or is forced off), accumulated session time is flushed to the database.
-5. **Sleep/Wake** — On system sleep, all session times are flushed and tracking pauses. On wake, tracking resumes without counting sleep time.
-
-### Data Flow
-
-The Admin UI and the Service both read/write the same SQLite database at `C:\ProgramData\ParentalControl\data.db`. There is no API or IPC between them — the database is the shared state. SQLite's WAL (Write-Ahead Logging) mode ensures safe concurrent access.
-
-### Database Schema
-
-| Table | Purpose |
-|---|---|
-| `users` | Local Windows users (SID, username, restricted flag) |
-| `limits` | Per-user limit config (daily minutes, schedule start/end) |
-| `usage` | Daily usage records (user, date, minutes used) |
-| `events` | Audit log of all enforcement events |
-
----
-
-## File Locations (After Installation)
-
-| Path | Contents |
-|---|---|
-| `C:\Program Files\ParentalControl\admin\` | Admin UI binaries |
-| `C:\Program Files\ParentalControl\service\` | Service binaries |
-| `C:\ProgramData\ParentalControl\data.db` | SQLite database |
-| `C:\ProgramData\ParentalControl\logs\` | Rolling log files (30-day retention) |
+The installer automatically:
+1. Installs files to `C:\Program Files\ParentalControl\`
+2. Registers and starts `ParentalControl.Service` as an auto-start Windows Service under `LocalSystem`.
+3. Configures `ParentalControl.Agent.exe` in `HKLM\Software\Microsoft\Windows\CurrentVersion\Run` to start at user logon.
+4. Creates Start Menu and Desktop shortcuts for the Admin UI.
 
 ---
 
