@@ -1,3 +1,4 @@
+using ParentalControl.Core.Data;
 using System.ServiceProcess;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -30,7 +31,8 @@ public partial class MainViewModel : ObservableObject
         _dashboardVm = new DashboardViewModel(NavigateToUserDetail);
         CurrentView = _dashboardVm;
         _dashboardVm.LoadAll();
-
+        _dashboardVm.LoadAll();
+        CheckFirstLaunchLanguagePreset();
         UpdateServiceStatus();
         _serviceTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(5) };
         _serviceTimer.Tick += (_, _) => UpdateServiceStatus();
@@ -101,5 +103,31 @@ public partial class MainViewModel : ObservableObject
     {
         _dashboardVm.LoadAll();
         CurrentView = _dashboardVm;
+    }
+
+    private void CheckFirstLaunchLanguagePreset()
+    {
+        var existing = SettingsRepository.Get(SettingsRepository.KeyLanguagePreset);
+        if (string.IsNullOrWhiteSpace(existing))
+        {
+            var result = System.Windows.MessageBox.Show(
+                "Welcome to Parental Control!\n\n" +
+                "Please choose your default language preset for child notifications, screen warnings, and the time request portal:\n\n" +
+                "• Click [YES] for Bahasa Indonesia (Default)\n" +
+                "• Click [NO] for English\n\n" +
+                "(Note: You can customize every alert message or change presets anytime later under Settings.)",
+                "Parental Control — Initial Setup",
+                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Question);
+
+            if (result == System.Windows.MessageBoxResult.Yes)
+            {
+                SettingsRepository.ApplyLanguagePreset("id");
+            }
+            else
+            {
+                SettingsRepository.ApplyLanguagePreset("en");
+            }
+        }
     }
 }

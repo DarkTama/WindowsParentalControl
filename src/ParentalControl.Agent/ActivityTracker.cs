@@ -56,6 +56,13 @@ public static class ActivityTracker
             return;
 
         var today = DateOnly.FromDateTime(DateTime.Now);
-        AppUsageRepository.AddMinutes(userId, today, process, title, 1);
+        Task.Run(() =>
+        {
+            try
+            {
+                AppUsageRepository.AddMinutes(userId, today, process, title, 1);
+            }
+            catch { }
+        });
     }
 }

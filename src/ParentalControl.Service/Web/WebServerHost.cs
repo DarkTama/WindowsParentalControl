@@ -64,6 +64,11 @@ public sealed class WebServerHost : BackgroundService
             {
                 targetUser = restrictedUsers.FirstOrDefault(u => string.Equals(u.Username, queryUser, StringComparison.OrdinalIgnoreCase));
             }
+            // Redirect administrator directly to /admin
+            if (activeUser != null && !activeUser.IsRestricted && string.IsNullOrWhiteSpace(queryUser))
+            {
+                return Results.Redirect("/admin");
+            }
 
             bool isAdminTesting = false;
 
@@ -73,19 +78,17 @@ public sealed class WebServerHost : BackgroundService
                 targetUser = activeUser;
             }
 
-            // If active user is an unrestricted Administrator
+            // Fallback for query testing or preview
             if (targetUser == null)
             {
                 if (restrictedUsers.Count > 0)
                 {
-                    // Admin is previewing/testing allowance page for restricted child account
                     targetUser = restrictedUsers.FirstOrDefault();
                     isAdminTesting = true;
                 }
                 else
                 {
-                    // No restricted accounts on machine at all
-                    return Results.Content(RequestPage.RenderUnrestricted(activeUser?.Username ?? "Administrator"), "text/html");
+                    return Results.Redirect("/admin");
                 }
             }
 
@@ -95,6 +98,10 @@ public sealed class WebServerHost : BackgroundService
             var used = usage?.MinutesUsed ?? 0;
             var remaining = Math.Max(0, totalAllowed - used);
             var curfew = limit != null ? $"{limit.ScheduleStart:HH:mm} – {limit.ScheduleEnd:HH:mm}" : "08:00 – 22:00";
+
+            var activeTargetSession = sessions.FirstOrDefault(s => s.UserSid == targetUser.Sid);
+            var elapsedSec = activeTargetSession != null ? (int)(DateTime.Now - activeTargetSession.LastTick).TotalSeconds : 0;
+            var remainingSeconds = Math.Max(0, (remaining * 60) - Math.Min(59, Math.Max(0, elapsedSec)));
 
             var isOffline = !await TelegramBotService.CheckConnectivityAsync();
             var maxRequests = SettingsRepository.GetMaxDailyRequests();
@@ -107,6 +114,7 @@ public sealed class WebServerHost : BackgroundService
             var html = RequestPage.Render(
                 targetUser.Username,
                 remaining,
+                remainingSeconds,
                 curfew,
                 isOffline,
                 countToday,
@@ -115,7 +123,6 @@ public sealed class WebServerHost : BackgroundService
                 latestReq?.Status,
                 isAdminTesting,
                 availableUsernames);
-
             return Results.Content(html, "text/html");
         });
 
@@ -343,7 +350,6 @@ public sealed class WebServerHost : BackgroundService
 
             var today = DateOnly.FromDateTime(DateTime.Now);
             UsageRepository.AddBonusMinutes(userId, today, minutes);
-
             var user = UserRepository.GetAll().FirstOrDefault(u => u.Id == userId);
             if (user != null)
             {
@@ -351,8 +357,11 @@ public sealed class WebServerHost : BackgroundService
                 var active = SessionManager.GetActiveSessions().FirstOrDefault(s => s.Sid == user.Sid);
                 if (active.Sid != null)
                 {
-                    NotificationManager.SendMessage(active.SessionId, "Parental Control — Extra Time Granted!",
-                        $"Administrator granted you +{minutes} minutes of screen time!", false, 15);
+                    var msg = SettingsRepository.GetMessage(SettingsRepository.KeyMsgBonusGranted, new Dictionary<string, string>
+                    {
+                        ["minutes"] = minutes.ToString()
+                    });
+                    NotificationManager.SendMessage(active.SessionId, "Parental Control", msg, false, 15);
                 }
             }
 
@@ -393,7 +402,7 @@ public sealed class WebServerHost : BackgroundService
 
                 if (string.IsNullOrWhiteSpace(message))
                 {
-                    message = "Waktunya istirahat. Komputer akan segera dikunci oleh administrator.";
+                    message = SettingsRepository.GetMessage(SettingsRepository.KeyMsgRemoteLock);
                 }
 
                 var sessionUser = _sessionTracker.ActiveSessions.TryGetValue(sessionId, out var s) ? s.Username : $"Session {sessionId}";
@@ -446,8 +455,11 @@ public sealed class WebServerHost : BackgroundService
                     var active = SessionManager.GetActiveSessions().FirstOrDefault(s => s.Sid == user.Sid);
                     if (active.Sid != null)
                     {
-                        NotificationManager.SendMessage(active.SessionId, "Parental Control — Extra Time Approved!",
-                            $"Your request for screen time was approved (+{minutes}m)!", false, 15);
+                        var msg = SettingsRepository.GetMessage(SettingsRepository.KeyMsgBonusGranted, new Dictionary<string, string>
+                        {
+                            ["minutes"] = minutes.ToString()
+                        });
+                        NotificationManager.SendMessage(active.SessionId, "Parental Control", msg, false, 15);
                     }
                 }
             }

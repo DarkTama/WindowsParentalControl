@@ -19,12 +19,12 @@
             </Button>
         </Border>
 
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
-            <StackPanel Margin="16,8,16,16" MaxWidth="800" HorizontalAlignment="Left">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" PreviewMouseWheel="ScrollViewer_PreviewMouseWheel">
+            <StackPanel Margin="16,8,16,24" MaxWidth="820" HorizontalAlignment="Left">
 
                 <!-- ═══ Telegram Notification Settings ═══ -->
-                <md:ColorZone Mode="PrimaryMid" Padding="8,6" CornerRadius="4" Margin="0,0,0,8">
-                    <TextBlock Text="Telegram Mobile Notifications"
+                <md:ColorZone Mode="PrimaryMid" Padding="10,8" CornerRadius="4" Margin="0,0,0,8">
+                    <TextBlock Text="📱 Telegram Remote Alerts &amp; Instant Approval"
                                FontSize="14" FontWeight="DemiBold"
                                Foreground="{DynamicResource MaterialDesign.Brush.Primary.Foreground}"
                                VerticalAlignment="Center" />
@@ -32,10 +32,10 @@
 
                 <md:Card Padding="20" Margin="0,0,0,24" md:ElevationAssist.Elevation="Dp2">
                     <StackPanel>
-                        <TextBlock Text="Configure a Telegram Bot to receive screen time extension requests with 1-tap Approve/Decline buttons on your phone."
-                                   TextWrapping="Wrap" Opacity="0.7" Margin="0,0,0,16" />
+                        <TextBlock Text="Receive instant push notifications on your phone whenever a child requests extra screen time, and approve or decline with a single tap using Telegram inline buttons."
+                                   TextWrapping="Wrap" Opacity="0.8" Margin="0,0,0,16" LineHeight="20" />
 
-                        <TextBox md:HintAssist.Hint="Telegram Bot Token (from @BotFather)"
+                        <TextBox md:HintAssist.Hint="Telegram Bot Token (obtained from @BotFather)"
                                  md:HintAssist.IsFloating="True"
                                  Text="{Binding TelegramBotToken, UpdateSourceTrigger=PropertyChanged}"
                                  Style="{StaticResource MaterialDesignOutlinedTextBox}"
@@ -47,26 +47,32 @@
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <TextBox Grid.Column="0"
-                                     md:HintAssist.Hint="Telegram Chat ID (numeric ID e.g. 123456789 — not @username)"
+                                     md:HintAssist.Hint="Admin Telegram Chat ID (numeric ID e.g. 940007183 — not @username)"
                                      md:HintAssist.IsFloating="True"
                                      Text="{Binding TelegramChatId, UpdateSourceTrigger=PropertyChanged}"
                                      Style="{StaticResource MaterialDesignOutlinedTextBox}"
                                      Margin="0,0,8,0" />
                             <Button Grid.Column="1"
                                     Content="Detect ID"
-                                    ToolTip="Queries bot updates for your numeric Telegram ID after you message the bot"
+                                    ToolTip="Queries your bot for your numeric Telegram ID after you send /start"
                                     Command="{Binding DetectChatIdCommand}"
                                     Style="{StaticResource MaterialDesignOutlinedButton}"
                                     VerticalAlignment="Center" />
                         </Grid>
 
-                        <TextBlock Text="💡 To find your ID: Open your bot in Telegram (@DT_ParentalControlBot), tap Start (or send /start), then click 'Detect ID'."
-                                   FontSize="11" Opacity="0.6" Margin="0,0,0,16" />
+                        <Border Background="#f1f5f9" BorderBrush="#cbd5e1" BorderThickness="1" CornerRadius="6" Padding="12,10" Margin="0,4,0,16">
+                            <StackPanel>
+                                <TextBlock Text="💡 Quick Setup Guide:" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,4" Foreground="#1e293b" />
+                                <TextBlock Text="1. In Telegram, search for @BotFather and send /newbot to create your bot and get the Bot Token." FontSize="11" Foreground="#475569" Margin="0,0,0,2" />
+                                <TextBlock Text="2. Open your new bot in Telegram, tap Start (or send /start)." FontSize="11" Foreground="#475569" Margin="0,0,0,2" />
+                                <TextBlock Text="3. Paste the Bot Token above and click 'Detect ID' to automatically retrieve your numeric Chat ID." FontSize="11" Foreground="#475569" />
+                            </StackPanel>
+                        </Border>
 
                         <StackPanel Orientation="Horizontal">
                             <Button Content="Test Telegram Alert"
                                     Command="{Binding TestTelegramCommand}"
-                                    Style="{StaticResource MaterialDesignPaperButton}"
+                                    Style="{StaticResource MaterialDesignRaisedButton}"
                                     Margin="0,0,12,0" />
                             <TextBlock Text="{Binding TestStatus}" VerticalAlignment="Center" FontWeight="SemiBold" TextWrapping="Wrap" />
                         </StackPanel>
@@ -74,8 +80,8 @@
                 </md:Card>
 
                 <!-- ═══ In-Session Warning Intervals ═══ -->
-                <md:ColorZone Mode="PrimaryMid" Padding="8,6" CornerRadius="4" Margin="0,0,0,8">
-                    <TextBlock Text="In-Session Warning Intervals"
+                <md:ColorZone Mode="PrimaryMid" Padding="10,8" CornerRadius="4" Margin="0,0,0,8">
+                    <TextBlock Text="⏱️ In-Session Warning Intervals"
                                FontSize="14" FontWeight="DemiBold"
                                Foreground="{DynamicResource MaterialDesign.Brush.Primary.Foreground}"
                                VerticalAlignment="Center" />
@@ -83,19 +89,23 @@
 
                 <md:Card Padding="20" Margin="0,0,0,24" md:ElevationAssist.Elevation="Dp2">
                     <StackPanel>
-                        <TextBlock Text="Minutes remaining when unskippable popup alerts will be displayed inside the user's active session (comma-separated)."
-                                   TextWrapping="Wrap" Opacity="0.7" Margin="0,0,0,16" />
+                        <TextBlock Text="Minutes remaining when native, unskippable Win32 popup alerts appear inside the child's active Windows desktop session. Popups display above games and full-screen applications."
+                                   TextWrapping="Wrap" Opacity="0.8" Margin="0,0,0,16" LineHeight="20" />
 
-                        <TextBox md:HintAssist.Hint="Alert Intervals (e.g. 15,5,1)"
+                        <TextBox md:HintAssist.Hint="Alert Intervals in minutes, comma-separated (e.g. 15,5,1)"
                                  md:HintAssist.IsFloating="True"
                                  Text="{Binding AlertIntervals, UpdateSourceTrigger=PropertyChanged}"
-                                 Style="{StaticResource MaterialDesignOutlinedTextBox}" />
+                                 Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                 Margin="0,0,0,8" />
+
+                        <TextBlock Text="Example: '15,5,1' triggers native system alerts when 15 minutes, 5 minutes, and 1 minute remain before forced logout or curfew."
+                                   FontSize="11" Opacity="0.6" />
                     </StackPanel>
                 </md:Card>
 
                 <!-- ═══ Screen Time Request Limits ═══ -->
-                <md:ColorZone Mode="PrimaryMid" Padding="8,6" CornerRadius="4" Margin="0,0,0,8">
-                    <TextBlock Text="Screen Time Request Limits"
+                <md:ColorZone Mode="PrimaryMid" Padding="10,8" CornerRadius="4" Margin="0,0,0,8">
+                    <TextBlock Text="🛡️ Daily Extension Request Limits"
                                FontSize="14" FontWeight="DemiBold"
                                Foreground="{DynamicResource MaterialDesign.Brush.Primary.Foreground}"
                                VerticalAlignment="Center" />
@@ -103,18 +113,23 @@
 
                 <md:Card Padding="20" Margin="0,0,0,24" md:ElevationAssist.Elevation="Dp2">
                     <StackPanel>
-                        <TextBlock Text="Maximum number of screen time extension requests a restricted user can submit per calendar day (default: 1, 0 to disable)."
-                                   TextWrapping="Wrap" Opacity="0.7" Margin="0,0,0,16" />
+                        <TextBlock Text="Controls how many times a restricted child account is permitted to submit an extension request per calendar day. Set to 0 to completely disallow extra time requests."
+                                   TextWrapping="Wrap" Opacity="0.8" Margin="0,0,0,16" LineHeight="20" />
 
                         <TextBox md:HintAssist.Hint="Max Daily Requests Per User (e.g. 1)"
                                  md:HintAssist.IsFloating="True"
                                  Text="{Binding MaxDailyRequests, UpdateSourceTrigger=PropertyChanged}"
-                                 Style="{StaticResource MaterialDesignOutlinedTextBox}" />
+                                 Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                 Margin="0,0,0,8" />
+
+                        <TextBlock Text="Default is 1. If child already has a pending or resolved request, portal enforces this daily ceiling."
+                                   FontSize="11" Opacity="0.6" />
                     </StackPanel>
                 </md:Card>
-                <!-- ═══ Authenticator TOTP Security ═══ -->
-                <md:ColorZone Mode="PrimaryMid" Padding="8,6" CornerRadius="4" Margin="0,0,0,8">
-                    <TextBlock Text="Web Admin Authenticator 2FA (RFC 6238 TOTP)"
+
+                <!-- ═══ Customizable Messages & Presets ═══ -->
+                <md:ColorZone Mode="PrimaryMid" Padding="10,8" CornerRadius="4" Margin="0,0,0,8">
+                    <TextBlock Text="💬 User Notifications &amp; Alert Messages"
                                FontSize="14" FontWeight="DemiBold"
                                Foreground="{DynamicResource MaterialDesign.Brush.Primary.Foreground}"
                                VerticalAlignment="Center" />
@@ -122,6 +137,98 @@
 
                 <md:Card Padding="20" Margin="0,0,0,24" md:ElevationAssist.Elevation="Dp2">
                     <StackPanel>
+                        <TextBlock Text="Customize all dialog messages shown to restricted child sessions. Placeholders like {minutes} and {curfew_end} are dynamically replaced at runtime."
+                                   TextWrapping="Wrap" Opacity="0.8" Margin="0,0,0,14" LineHeight="20" />
+
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                            <TextBlock Text="Language Presets:" VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,0,12,0" />
+                            <Button Content="🇮🇩 Bahasa Indonesia Preset"
+                                    Command="{Binding ApplyPresetIdCommand}"
+                                    Style="{StaticResource MaterialDesignOutlinedButton}"
+                                    Margin="0,0,8,0" />
+                            <Button Content="🇬🇧 English Preset"
+                                    Command="{Binding ApplyPresetEnCommand}"
+                                    Style="{StaticResource MaterialDesignOutlinedButton}" />
+                        </StackPanel>
+
+                        <!-- Peringatan Batas Waktu Layar -->
+                        <TextBox md:HintAssist.Hint="Quota Warning Popup ({minutes} = remaining minutes)"
+                                 md:HintAssist.IsFloating="True"
+                                 Text="{Binding MsgLimitWarn, UpdateSourceTrigger=PropertyChanged}"
+                                 Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                 TextWrapping="Wrap"
+                                 Margin="0,0,0,12" />
+
+                        <!-- Peringatan Jam Malam -->
+                        <TextBox md:HintAssist.Hint="Curfew Warning Popup ({curfew_end} = time, {minutes} = remaining minutes)"
+                                 md:HintAssist.IsFloating="True"
+                                 Text="{Binding MsgCurfewWarn, UpdateSourceTrigger=PropertyChanged}"
+                                 Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                 TextWrapping="Wrap"
+                                 Margin="0,0,0,12" />
+
+                        <!-- Batas Waktu Tercapai -->
+                        <TextBox md:HintAssist.Hint="Daily Limit Reached Popup (shown right before force logoff)"
+                                 md:HintAssist.IsFloating="True"
+                                 Text="{Binding MsgLimitReached, UpdateSourceTrigger=PropertyChanged}"
+                                 Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                 TextWrapping="Wrap"
+                                 Margin="0,0,0,12" />
+
+                        <!-- Jam Malam Tiba -->
+                        <TextBox md:HintAssist.Hint="Curfew Reached Popup (shown right before force logoff)"
+                                 md:HintAssist.IsFloating="True"
+                                 Text="{Binding MsgCurfewReached, UpdateSourceTrigger=PropertyChanged}"
+                                 Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                 TextWrapping="Wrap"
+                                 Margin="0,0,0,12" />
+
+                        <!-- Login Ditolak - Batas Habis -->
+                        <TextBox md:HintAssist.Hint="Sign-in Denied Popup — Daily Limit Reached"
+                                 md:HintAssist.IsFloating="True"
+                                 Text="{Binding MsgLoginDeniedLimit, UpdateSourceTrigger=PropertyChanged}"
+                                 Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                 TextWrapping="Wrap"
+                                 Margin="0,0,0,12" />
+
+                        <!-- Login Ditolak - Jam Malam -->
+                        <TextBox md:HintAssist.Hint="Sign-in Denied Popup — Outside Schedule Hours"
+                                 md:HintAssist.IsFloating="True"
+                                 Text="{Binding MsgLoginDeniedCurfew, UpdateSourceTrigger=PropertyChanged}"
+                                 Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                 TextWrapping="Wrap"
+                                 Margin="0,0,0,12" />
+
+                        <!-- Pesan Kunci Layar -->
+                        <TextBox md:HintAssist.Hint="Remote Lock Screen Warning (countdown banner before lock)"
+                                 md:HintAssist.IsFloating="True"
+                                 Text="{Binding MsgRemoteLock, UpdateSourceTrigger=PropertyChanged}"
+                                 Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                 TextWrapping="Wrap"
+                                 Margin="0,0,0,12" />
+
+                        <!-- Tambahan Waktu Diberikan -->
+                        <TextBox md:HintAssist.Hint="Extra Time Approved Notification ({minutes} = minutes granted)"
+                                 md:HintAssist.IsFloating="True"
+                                 Text="{Binding MsgBonusGranted, UpdateSourceTrigger=PropertyChanged}"
+                                 Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                 TextWrapping="Wrap" />
+                    </StackPanel>
+                </md:Card>
+
+                <!-- ═══ Authenticator TOTP Security ═══ -->
+                <md:ColorZone Mode="PrimaryMid" Padding="10,8" CornerRadius="4" Margin="0,0,0,8">
+                    <TextBlock Text="🔐 Web Admin Authenticator 2FA (RFC 6238 TOTP)"
+                               FontSize="14" FontWeight="DemiBold"
+                               Foreground="{DynamicResource MaterialDesign.Brush.Primary.Foreground}"
+                               VerticalAlignment="Center" />
+                </md:ColorZone>
+
+                <md:Card Padding="20" Margin="0,0,0,24" md:ElevationAssist.Elevation="Dp2">
+                    <StackPanel>
+                        <TextBlock Text="Protect the embedded Kestrel Web Admin portal (http://localhost:5050/admin) with two-factor authentication. Requires 6-digit dynamic code from Google Authenticator, Microsoft Authenticator, or 1Password to access the dashboard."
+                                   TextWrapping="Wrap" Opacity="0.8" Margin="0,0,0,16" LineHeight="20" />
+
                         <CheckBox Content="Enable Authenticator 2FA for Web Admin (port 5050)"
                                   IsChecked="{Binding IsTotpEnabled}"
                                   FontWeight="SemiBold"
@@ -161,7 +268,7 @@
                         Command="{Binding SaveSettingsCommand}"
                         Style="{StaticResource MaterialDesignRaisedButton}"
                         HorizontalAlignment="Left"
-                        Padding="32,10" Margin="0,8,0,0" />
+                        Padding="36,12" Margin="0,8,0,16" />
 
             </StackPanel>
         </ScrollViewer>

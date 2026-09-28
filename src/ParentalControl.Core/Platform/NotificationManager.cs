@@ -1,3 +1,4 @@
+using ParentalControl.Core.Data;
 namespace ParentalControl.Core.Platform;
 
 public static class NotificationManager
@@ -48,20 +49,23 @@ public static class NotificationManager
 
     public static void SendWarning(int sessionId, int minutesRemaining)
     {
-        var title = "Parental Control — Peringatan Waktu Layar";
-        var msg = minutesRemaining <= 1
-            ? "⚠️ PERINGATAN TERAKHIR: Sisa waktu layar Anda tinggal 1 MENIT!\nSegera simpan game dan semua pekerjaan Anda. Sesi akan otomatis keluar."
-            : $"⚠️ PERINGATAN: Sisa waktu layar Anda hari ini tinggal {minutesRemaining} menit.";
+        var title = "Parental Control — Screen Time Warning";
+        var msg = SettingsRepository.GetMessage(SettingsRepository.KeyMsgLimitWarn, new Dictionary<string, string>
+        {
+            ["minutes"] = minutesRemaining.ToString()
+        });
 
         SendMessage(sessionId, title, msg, isWarning: true, timeoutSeconds: 30);
     }
 
     public static void SendCurfewWarning(int sessionId, int minutesRemaining, TimeOnly curfewTime)
     {
-        var title = "Parental Control — Peringatan Jam Malam";
-        var msg = minutesRemaining <= 1
-            ? $"⚠️ PERINGATAN TERAKHIR: Jam malam pukul {curfewTime:HH:mm} tinggal 1 MENIT lagi!\nSegera simpan pekerjaan Anda. Sesi akan ditutup."
-            : $"⚠️ PERINGATAN: Batas jam malam berakhir pada pukul {curfewTime:HH:mm} (sisa {minutesRemaining} menit).";
+        var title = "Parental Control — Curfew Warning";
+        var msg = SettingsRepository.GetMessage(SettingsRepository.KeyMsgCurfewWarn, new Dictionary<string, string>
+        {
+            ["minutes"] = minutesRemaining.ToString(),
+            ["curfew_end"] = curfewTime.ToString("HH:mm")
+        });
 
         SendMessage(sessionId, title, msg, isWarning: true, timeoutSeconds: 30);
     }

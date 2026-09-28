@@ -5,18 +5,19 @@ using ParentalControl.Core.Models;
 
 namespace ParentalControl.Agent;
 
-public sealed class TrayApplicationContext : ApplicationContext
+public sealed class TrayApplicationContext : System.Windows.Forms.ApplicationContext
 {
-    private readonly NotifyIcon _notifyIcon;
+    private readonly System.Windows.Forms.NotifyIcon _notifyIcon;
     private readonly System.Windows.Forms.Timer _timer;
     private User? _currentUser;
     private bool _isAdmin;
+    private WidgetWindow? _widgetWindow;
 
     public TrayApplicationContext()
     {
         ResolveCurrentUser();
 
-        _notifyIcon = new NotifyIcon
+        _notifyIcon = new System.Windows.Forms.NotifyIcon
         {
             Icon = SystemIcons.Shield,
             Visible = true,
@@ -24,6 +25,14 @@ public sealed class TrayApplicationContext : ApplicationContext
         };
 
         BuildContextMenu();
+
+        // Show WPF floating countdown widget on startup
+        try
+        {
+            _widgetWindow = new WidgetWindow(_currentUser, _isAdmin);
+            _widgetWindow.Show();
+        }
+        catch { }
 
         _timer = new System.Windows.Forms.Timer
         {
@@ -54,15 +63,32 @@ public sealed class TrayApplicationContext : ApplicationContext
 
     private void BuildContextMenu()
     {
-        var menu = new ContextMenuStrip();
+        var menu = new System.Windows.Forms.ContextMenuStrip();
 
-        var titleItem = new ToolStripMenuItem(_currentUser != null ? $"Pengguna: {_currentUser.Username}" : "Parental Control")
+        var titleItem = new System.Windows.Forms.ToolStripMenuItem(_currentUser != null ? $"Pengguna: {_currentUser.Username}" : "Parental Control")
         {
             Enabled = false
         };
         menu.Items.Add(titleItem);
 
-        var requestItem = new ToolStripMenuItem("🎮 Minta Tambahan Waktu Layar...", null, (s, e) =>
+        var toggleWidgetItem = new System.Windows.Forms.ToolStripMenuItem("⏱ Tampilkan / Sembunyikan Widget", null, (s, e) =>
+        {
+            if (_widgetWindow != null)
+            {
+                if (_widgetWindow.Visibility == System.Windows.Visibility.Visible)
+                {
+                    _widgetWindow.Hide();
+                }
+                else
+                {
+                    _widgetWindow.Show();
+                    _widgetWindow.Activate();
+                }
+            }
+        });
+        menu.Items.Add(toggleWidgetItem);
+
+        var requestItem = new System.Windows.Forms.ToolStripMenuItem("🎮 Minta Tambahan Waktu Layar...", null, (s, e) =>
         {
             try
             {
@@ -74,11 +100,12 @@ public sealed class TrayApplicationContext : ApplicationContext
 
         if (_isAdmin)
         {
-            menu.Items.Add(new ToolStripSeparator());
-            var exitItem = new ToolStripMenuItem("Keluar dari Agent", null, (s, e) =>
+            menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
+            var exitItem = new System.Windows.Forms.ToolStripMenuItem("Keluar dari Agent", null, (s, e) =>
             {
                 _notifyIcon.Visible = false;
-                Application.Exit();
+                _widgetWindow?.Close();
+                System.Windows.Forms.Application.Exit();
             });
             menu.Items.Add(exitItem);
         }
@@ -100,27 +127,37 @@ public sealed class TrayApplicationContext : ApplicationContext
             return;
         }
 
-        // Track foreground app tick
+        // Track foreground app tick asynchronously
         ActivityTracker.RecordTick(_currentUser.Id);
 
-        var today = DateOnly.FromDateTime(DateTime.Now);
-        var dayOfWeek = DateTime.Now.DayOfWeek;
-        var limit = ScheduleRepository.GetEffectiveLimit(_currentUser.Id, dayOfWeek);
-        var usage = UsageRepository.GetUsage(_currentUser.Id, today);
-
-        if (limit != null)
+        var userId = _currentUser.Id;
+        Task.Run(() =>
         {
-            var totalAllowed = limit.DailyMinutes + (usage?.BonusMinutes ?? 0);
-            var remaining = Math.Max(0, totalAllowed - (usage?.MinutesUsed ?? 0));
-            var hours = remaining / 60;
-            var mins = remaining % 60;
-            var text = hours > 0 ? $"Sisa {hours} jam {mins} mnt" : $"Sisa {mins} mnt";
+            try
+            {
+                var today = DateOnly.FromDateTime(DateTime.Now);
+                var dayOfWeek = DateTime.Now.DayOfWeek;
+                var limit = ScheduleRepository.GetEffectiveLimit(userId, dayOfWeek);
+                var usage = UsageRepository.GetUsage(userId, today);
 
-            // NotifyIcon Text limit is 63 chars
-            var tooltip = $"Parental Control: {text}".Trim();
-            if (tooltip.Length > 63) tooltip = tooltip.Substring(0, 63);
-            _notifyIcon.Text = tooltip;
-        }
+                if (limit != null)
+                {
+                    var totalAllowed = limit.DailyMinutes + (usage?.BonusMinutes ?? 0);
+                    var remaining = Math.Max(0, totalAllowed - (usage?.MinutesUsed ?? 0));
+                    var hours = remaining / 60;
+                    var mins = remaining % 60;
+                    var text = hours > 0 ? $"Sisa {hours} jam {mins} mnt" : $"Sisa {mins} mnt";
+
+                    // NotifyIcon Text limit is 63 chars
+                    var tooltip = $"Parental Control: {text}".Trim();
+                    if (tooltip.Length > 63) tooltip = tooltip.Substring(0, 63);
+
+                    // Update tooltip on UI thread
+                    _notifyIcon.Text = tooltip;
+                }
+            }
+            catch { }
+        });
     }
 
     protected override void Dispose(bool disposing)
@@ -133,6 +170,14 @@ public sealed class TrayApplicationContext : ApplicationContext
             {
                 _notifyIcon.Visible = false;
                 _notifyIcon.Dispose();
+            }
+            if (_widgetWindow != null)
+            {
+                try
+                {
+                    _widgetWindow.Close();
+                }
+                catch { }
             }
         }
         base.Dispose(disposing);

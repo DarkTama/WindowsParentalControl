@@ -16,7 +16,7 @@
             </Button>
         </Border>
 
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" PreviewMouseWheel="ScrollViewer_PreviewMouseWheel">
             <StackPanel Margin="16,8,16,16">
 
                 <!-- ═══ User Details ═══ -->

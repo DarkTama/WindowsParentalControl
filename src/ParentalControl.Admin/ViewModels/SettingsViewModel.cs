@@ -24,6 +24,7 @@ public partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty]
     private int _maxDailyRequests = 1;
+
     [ObservableProperty]
     private bool _isTotpEnabled;
 
@@ -42,6 +43,34 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private string _testStatus = string.Empty;
 
+    // Customizable User Notification Messages
+    [ObservableProperty]
+    private string _languagePreset = "id";
+
+    [ObservableProperty]
+    private string _msgLimitWarn = string.Empty;
+
+    [ObservableProperty]
+    private string _msgCurfewWarn = string.Empty;
+
+    [ObservableProperty]
+    private string _msgLimitReached = string.Empty;
+
+    [ObservableProperty]
+    private string _msgCurfewReached = string.Empty;
+
+    [ObservableProperty]
+    private string _msgLoginDeniedLimit = string.Empty;
+
+    [ObservableProperty]
+    private string _msgLoginDeniedCurfew = string.Empty;
+
+    [ObservableProperty]
+    private string _msgRemoteLock = string.Empty;
+
+    [ObservableProperty]
+    private string _msgBonusGranted = string.Empty;
+
     public SettingsViewModel(Action navigateBack)
     {
         _navigateBack = navigateBack;
@@ -56,11 +85,39 @@ public partial class SettingsViewModel : ObservableObject
         MaxDailyRequests = SettingsRepository.GetMaxDailyRequests();
         IsTotpEnabled = SettingsRepository.Get(SettingsRepository.KeyTotpEnabled, "false") == "true";
         TotpSecret = SettingsRepository.Get(SettingsRepository.KeyTotpSecret);
+
         if (!string.IsNullOrWhiteSpace(TotpSecret))
         {
             TotpUri = TotpService.GenerateOtpauthUri("ParentalControl", Environment.MachineName, TotpSecret);
             RefreshQrCode();
         }
+
+        // Load message templates
+        LanguagePreset = SettingsRepository.Get(SettingsRepository.KeyLanguagePreset, "id");
+        MsgLimitWarn = SettingsRepository.GetMessage(SettingsRepository.KeyMsgLimitWarn);
+        MsgCurfewWarn = SettingsRepository.GetMessage(SettingsRepository.KeyMsgCurfewWarn);
+        MsgLimitReached = SettingsRepository.GetMessage(SettingsRepository.KeyMsgLimitReached);
+        MsgCurfewReached = SettingsRepository.GetMessage(SettingsRepository.KeyMsgCurfewReached);
+        MsgLoginDeniedLimit = SettingsRepository.GetMessage(SettingsRepository.KeyMsgLoginDeniedLimit);
+        MsgLoginDeniedCurfew = SettingsRepository.GetMessage(SettingsRepository.KeyMsgLoginDeniedCurfew);
+        MsgRemoteLock = SettingsRepository.GetMessage(SettingsRepository.KeyMsgRemoteLock);
+        MsgBonusGranted = SettingsRepository.GetMessage(SettingsRepository.KeyMsgBonusGranted);
+    }
+
+    [RelayCommand]
+    private void ApplyPresetId()
+    {
+        SettingsRepository.ApplyLanguagePreset("id");
+        LoadSettings();
+        TestStatus = "Applied Indonesian message preset.";
+    }
+
+    [RelayCommand]
+    private void ApplyPresetEn()
+    {
+        SettingsRepository.ApplyLanguagePreset("en");
+        LoadSettings();
+        TestStatus = "Applied English message preset.";
     }
 
     [RelayCommand]
@@ -114,6 +171,7 @@ public partial class SettingsViewModel : ObservableObject
         TotpQrImage = null;
         HasQrCode = false;
     }
+
     [RelayCommand]
     private async Task TestTelegram()
     {
@@ -223,6 +281,16 @@ public partial class SettingsViewModel : ObservableObject
         SettingsRepository.Set(SettingsRepository.KeyMaxDailyRequests, MaxDailyRequests.ToString());
         SettingsRepository.Set(SettingsRepository.KeyTotpEnabled, IsTotpEnabled ? "true" : "false");
         SettingsRepository.Set(SettingsRepository.KeyTotpSecret, TotpSecret.Trim());
+
+        // Save customizable messages
+        SettingsRepository.Set(SettingsRepository.KeyMsgLimitWarn, MsgLimitWarn.Trim());
+        SettingsRepository.Set(SettingsRepository.KeyMsgCurfewWarn, MsgCurfewWarn.Trim());
+        SettingsRepository.Set(SettingsRepository.KeyMsgLimitReached, MsgLimitReached.Trim());
+        SettingsRepository.Set(SettingsRepository.KeyMsgCurfewReached, MsgCurfewReached.Trim());
+        SettingsRepository.Set(SettingsRepository.KeyMsgLoginDeniedLimit, MsgLoginDeniedLimit.Trim());
+        SettingsRepository.Set(SettingsRepository.KeyMsgLoginDeniedCurfew, MsgLoginDeniedCurfew.Trim());
+        SettingsRepository.Set(SettingsRepository.KeyMsgRemoteLock, MsgRemoteLock.Trim());
+        SettingsRepository.Set(SettingsRepository.KeyMsgBonusGranted, MsgBonusGranted.Trim());
 
         MessageBox.Show("Settings saved successfully.", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
     }

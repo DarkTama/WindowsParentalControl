@@ -21,6 +21,10 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress
+
       - name: Build installer
         shell: pwsh
         run: .\build.ps1

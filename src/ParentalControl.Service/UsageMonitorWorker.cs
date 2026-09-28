@@ -109,7 +109,7 @@ public sealed class UsageMonitorWorker : BackgroundService
                     session.Username, used, limit.DailyMinutes, usage?.BonusMinutes ?? 0);
                 EventRepository.LogEvent(session.UserSid, EventType.LIMIT_REACHED,
                     $"Used {used} of {totalAllowed} minutes (base: {limit.DailyMinutes}, bonus: {usage?.BonusMinutes ?? 0})");
-                NotificationManager.SendMessage(sessionId, "Parental Control — Waktu Habis", "Batas waktu layar harian Anda telah habis. Sesi Anda akan ditutup sekarang.", isWarning: true, timeoutSeconds: 5);
+                NotificationManager.SendMessage(sessionId, "Parental Control", SettingsRepository.GetMessage(SettingsRepository.KeyMsgLimitReached), isWarning: true, timeoutSeconds: 5);
                 SessionManager.ForceLogoff(sessionId);
                 EventRepository.LogEvent(session.UserSid, EventType.FORCED_LOGOUT, "Daily limit reached");
                 _sessionTracker.RemoveSession(sessionId);
@@ -121,7 +121,7 @@ public sealed class UsageMonitorWorker : BackgroundService
             {
                 _logger.Information("Outside allowed schedule for {Username} (allowed {Start}-{End})",
                     session.Username, limit.ScheduleStart, limit.ScheduleEnd);
-                NotificationManager.SendMessage(sessionId, "Parental Control — Jam Malam Telah Tiba", "Waktu penggunaan yang diizinkan telah berakhir. Sesi Anda akan ditutup sekarang.", isWarning: true, timeoutSeconds: 5);
+                NotificationManager.SendMessage(sessionId, "Parental Control", SettingsRepository.GetMessage(SettingsRepository.KeyMsgCurfewReached), isWarning: true, timeoutSeconds: 5);
                 SessionManager.ForceLogoff(sessionId);
                 EventRepository.LogEvent(session.UserSid, EventType.FORCED_LOGOUT, "Outside allowed schedule");
                 _sessionTracker.RemoveSession(sessionId);

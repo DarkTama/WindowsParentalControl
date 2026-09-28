@@ -75,7 +75,7 @@ public sealed class SessionTracker
             {
                 _logger.Information("Login denied (outside schedule): {Username}", username);
                 EventRepository.LogEvent(sid, EventType.LOGIN_DENIED, "Outside allowed schedule");
-                NotificationManager.SendMessage(sessionId, "Parental Control — Login Ditolak", "Login ditolak: Di luar jadwal jam yang diizinkan.", isWarning: true, timeoutSeconds: 5);
+                NotificationManager.SendMessage(sessionId, "Parental Control", SettingsRepository.GetMessage(SettingsRepository.KeyMsgLoginDeniedCurfew), isWarning: true, timeoutSeconds: 5);
                 SessionManager.ForceLogoff(sessionId);
                 return;
             }
@@ -87,7 +87,7 @@ public sealed class SessionTracker
             {
                 _logger.Information("Login denied (limit reached): {Username}", username);
                 EventRepository.LogEvent(sid, EventType.LOGIN_DENIED, "Daily limit already reached");
-                NotificationManager.SendMessage(sessionId, "Parental Control — Login Ditolak", "Login ditolak: Batas waktu layar harian telah tercapai.", isWarning: true, timeoutSeconds: 5);
+                NotificationManager.SendMessage(sessionId, "Parental Control", SettingsRepository.GetMessage(SettingsRepository.KeyMsgLoginDeniedLimit), isWarning: true, timeoutSeconds: 5);
                 SessionManager.ForceLogoff(sessionId);
                 return;
             }

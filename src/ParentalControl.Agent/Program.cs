@@ -15,8 +15,13 @@ internal static class Program
             // Already running for this user
             return;
         }
+        // Initialize WPF application context for WidgetWindow
+        _ = new System.Windows.Application
+        {
+            ShutdownMode = System.Windows.ShutdownMode.OnExplicitShutdown
+        };
 
         ApplicationConfiguration.Initialize();
-        Application.Run(new TrayApplicationContext());
+        System.Windows.Forms.Application.Run(new TrayApplicationContext());
     }
 }

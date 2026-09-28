@@ -10,7 +10,17 @@ public static class SettingsRepository
     public const string KeyTotpEnabled = "totp_enabled";
     public const string KeyAlertIntervals = "alert_intervals"; // e.g. "15,5,1"
     public const string KeyMaxDailyRequests = "max_daily_requests"; // default: 1
+    public const string KeyLanguagePreset = "language_preset"; // "id" or "en"
 
+    // Customizable message keys
+    public const string KeyMsgLimitWarn = "msg_limit_warn";
+    public const string KeyMsgCurfewWarn = "msg_curfew_warn";
+    public const string KeyMsgLimitReached = "msg_limit_reached";
+    public const string KeyMsgCurfewReached = "msg_curfew_reached";
+    public const string KeyMsgLoginDeniedLimit = "msg_login_denied_limit";
+    public const string KeyMsgLoginDeniedCurfew = "msg_login_denied_curfew";
+    public const string KeyMsgRemoteLock = "msg_remote_lock";
+    public const string KeyMsgBonusGranted = "msg_bonus_granted";
     public static string Get(string key, string defaultValue = "")
     {
         using var connection = DatabaseManager.CreateConnection();
@@ -56,4 +66,54 @@ public static class SettingsRepository
         }
         return dict;
     }
+
+    public static void ApplyLanguagePreset(string lang)
+    {
+        var isEnglish = lang.Equals("en", StringComparison.OrdinalIgnoreCase);
+        Set(KeyLanguagePreset, isEnglish ? "en" : "id");
+
+        if (isEnglish)
+        {
+            Set(KeyMsgLimitWarn, "You have {minutes} minutes of daily screen time remaining. Please save your work.");
+            Set(KeyMsgCurfewWarn, "Allowed usage time ends at {curfew_end} ({minutes} minutes remaining). Please save your work.");
+            Set(KeyMsgLimitReached, "Your daily screen time limit has been reached. Your session will close now.");
+            Set(KeyMsgCurfewReached, "Allowed usage time has ended (curfew). Your session will close now.");
+            Set(KeyMsgLoginDeniedLimit, "Sign-in denied: Daily screen time limit has already been reached.");
+            Set(KeyMsgLoginDeniedCurfew, "Sign-in denied: Outside allowed schedule hours.");
+            Set(KeyMsgRemoteLock, "Time for a break. Computer will be locked by administrator shortly.");
+            Set(KeyMsgBonusGranted, "Administrator has granted you +{minutes} minutes of screen time!");
+        }
+        else
+        {
+            Set(KeyMsgLimitWarn, "Sisa waktu layar harian Anda tinggal {minutes} menit lagi. Harap simpan semua pekerjaan Anda.");
+            Set(KeyMsgCurfewWarn, "Waktu penggunaan yang diizinkan akan berakhir pada pukul {curfew_end} ({minutes} menit lagi). Harap simpan pekerjaan Anda.");
+            Set(KeyMsgLimitReached, "Batas waktu layar harian Anda telah habis. Sesi Anda akan ditutup sekarang.");
+            Set(KeyMsgCurfewReached, "Waktu penggunaan yang diizinkan telah berakhir (jam malam). Sesi Anda akan ditutup sekarang.");
+            Set(KeyMsgLoginDeniedLimit, "Login ditolak: Batas waktu layar harian telah tercapai.");
+            Set(KeyMsgLoginDeniedCurfew, "Login ditolak: Di luar jadwal jam yang diizinkan.");
+            Set(KeyMsgRemoteLock, "Waktunya istirahat. Komputer akan segera dikunci oleh administrator.");
+            Set(KeyMsgBonusGranted, "Administrator telah menambahkan +{minutes} menit waktu layar untuk Anda!");
+        }
+    }
+
+    public static string GetMessage(string key, Dictionary<string, string>? placeholders = null)
+    {
+        var msg = Get(key);
+        if (string.IsNullOrWhiteSpace(msg))
+        {
+            var currentPreset = Get(KeyLanguagePreset, "id");
+            ApplyLanguagePreset(currentPreset);
+            msg = Get(key);
+        }
+
+        if (placeholders != null && !string.IsNullOrWhiteSpace(msg))
+        {
+            foreach (var (k, v) in placeholders)
+            {
+                msg = msg.Replace($"{{{k}}}", v);
+            }
+        }
+
+        return msg ?? string.Empty;
 }
+    }

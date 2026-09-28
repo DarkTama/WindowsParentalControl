@@ -1,0 +1,97 @@
+<Window x:Class="ParentalControl.Agent.WidgetWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Parental Control Widget"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        ResizeMode="NoResize"
+        SizeToContent="WidthAndHeight"
+        MouseLeftButtonDown="Window_MouseLeftButtonDown">
+
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+    </Window.Resources>
+
+    <Grid Margin="12">
+        <!-- ═══ EXPANDED WIDGET ═══ -->
+        <Border x:Name="ExpandedPanel"
+                Width="240"
+                Background="#131c2e"
+                BorderBrush="#2563eb"
+                BorderThickness="1.5"
+                CornerRadius="16"
+                Padding="16,14">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="20" ShadowDepth="4" Direction="270" Color="#000000" Opacity="0.65" />
+            </Border.Effect>
+            <StackPanel>
+                <!-- Top drag handle / controls bar -->
+                <DockPanel LastChildFill="False" Margin="0,0,0,10">
+                    <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="🛡️" FontSize="12" Margin="0,0,5,0" VerticalAlignment="Center" />
+                        <TextBlock x:Name="UserTitleText" Text="Dreitama" FontSize="12" FontWeight="SemiBold" Foreground="#94a3b8" VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <!-- Close button (Admins only) -->
+                    <Button x:Name="CloseBtn" DockPanel.Dock="Right" Content="✕" Width="20" Height="20"
+                            Margin="4,0,0,0"
+                            Background="Transparent" BorderBrush="Transparent" Foreground="#64748b" FontSize="11"
+                            Cursor="Hand" Click="CloseBtn_Click" />
+
+                    <!-- Collapse button -->
+                    <Button x:Name="CollapseBtn" DockPanel.Dock="Right" Content="−" Width="20" Height="20"
+                            Background="Transparent" BorderBrush="Transparent" Foreground="#94a3b8" FontSize="14" FontWeight="Bold"
+                            Cursor="Hand" Click="CollapseBtn_Click" ToolTip="Kecilkan Widget" />
+                </DockPanel>
+
+                <!-- Big Countdown Display -->
+                <Border Background="#0b1120" BorderBrush="#1e293b" BorderThickness="1" CornerRadius="10" Padding="10,8" Margin="0,0,0,10">
+                    <StackPanel HorizontalAlignment="Center">
+                        <TextBlock Text="SISA WAKTU HARI INI" FontSize="9" FontWeight="Bold" Foreground="#64748b" HorizontalAlignment="Center" Margin="0,0,0,2" />
+                        <TextBlock x:Name="CountdownText" Text="--:--" FontSize="28" FontWeight="ExtraBold" Foreground="#38bdf8"
+                                   FontFamily="Consolas, Monaco, monospace" HorizontalAlignment="Center" />
+                        <TextBlock x:Name="CurfewText" Text="Jam malam: --:--" FontSize="10" Foreground="#475569" HorizontalAlignment="Center" Margin="0,2,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Request Time Button -->
+                <Button x:Name="RequestBtn" Content="🎮 Minta Tambahan Waktu"
+                        Height="34"
+                        Background="#0284c7" Foreground="White" BorderThickness="0"
+                        FontSize="11" FontWeight="Bold" Cursor="Hand"
+                        Click="RequestBtn_Click">
+                    <Button.Resources>
+                        <Style TargetType="Border">
+                            <Setter Property="CornerRadius" Value="8" />
+                        </Style>
+                    </Button.Resources>
+                </Button>
+            </StackPanel>
+        </Border>
+
+        <!-- ═══ COLLAPSED MINI PILL ═══ -->
+        <Border x:Name="CollapsedPanel"
+                Visibility="Collapsed"
+                Height="36" Width="145"
+                Background="#131c2e"
+                BorderBrush="#38bdf8"
+                BorderThickness="1.5"
+                CornerRadius="18"
+                Padding="10,0">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="16" ShadowDepth="3" Direction="270" Color="#000000" Opacity="0.6" />
+            </Border.Effect>
+            <DockPanel LastChildFill="False" VerticalAlignment="Center">
+                <TextBlock Text="⏱" FontSize="12" Margin="0,0,4,0" VerticalAlignment="Center" />
+                <TextBlock x:Name="MiniCountdownText" Text="--:--" FontSize="13" FontWeight="Bold" Foreground="#38bdf8"
+                           FontFamily="Consolas, monospace" VerticalAlignment="Center" />
+                <Button DockPanel.Dock="Right" Content="+" Width="20" Height="20"
+                        Background="Transparent" BorderBrush="Transparent" Foreground="#38bdf8" FontSize="14" FontWeight="Bold"
+                        Cursor="Hand" Click="ExpandBtn_Click" ToolTip="Perbesar Widget" />
+            </DockPanel>
+        </Border>
+    </Grid>
+</Window>

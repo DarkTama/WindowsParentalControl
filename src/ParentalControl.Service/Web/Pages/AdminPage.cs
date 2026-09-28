@@ -135,8 +135,8 @@ public static class AdminPage
                     let html = '<table><thead><tr><th>User</th><th>Remaining</th><th>Curfew</th><th>Quick Actions</th></tr></thead><tbody>';
                     for (const s of sessions) {
                         if (!s.isRestricted) {
+                            html += `<tr>
                                 <td><strong>${s.username}</strong> <span class="badge" style="background:#334155;color:#38bdf8;font-size:0.7rem;padding:0.15rem 0.4rem;border-radius:4px;margin-left:4px">Admin</span><br><small style="color:#64748b">Session ${s.sessionId}</small></td>
-                                <td><span style="color:#22c55e;font-weight:600">Unlimited</span></td>
                                 <td><span style="color:#64748b">—</span></td>
                                 <td>
                                     <div style="display:flex;gap:0.35rem;flex-wrap:wrap">
