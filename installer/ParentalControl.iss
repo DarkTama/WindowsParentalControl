@@ -7,6 +7,7 @@
 #define MyAppExeName   "ParentalControl.Admin.exe"
 #define ServiceExeName "ParentalControl.Service.exe"
 #define ServiceName    "ParentalControl.Service"
+#define AgentExeName   "ParentalControl.Agent.exe"
 
 [Setup]
 AppId={{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
@@ -37,6 +38,11 @@ Source: "..\publish\service\*"; DestDir: "{app}\service"; Flags: ignoreversion r
 
 ; Admin app files
 Source: "..\publish\admin\*"; DestDir: "{app}\admin"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Agent files
+Source: "..\publish\agent\*"; DestDir: "{app}\agent"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[Registry]
+Root: HKLM; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "ParentalControlAgent"; ValueData: """{app}\agent\{#AgentExeName}"""; Flags: uninsdeletevalue
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\admin\{#MyAppExeName}"; \

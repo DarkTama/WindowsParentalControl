@@ -55,6 +55,16 @@ dotnet publish "$srcDir\ParentalControl.Admin\ParentalControl.Admin.csproj" `
 
 if ($LASTEXITCODE -ne 0) { Write-Error "Admin publish failed."; exit 1 }
 
+# Publish Agent
+Write-Host "`n=== Publishing ParentalControl.Agent ===" -ForegroundColor Cyan
+dotnet publish "$srcDir\ParentalControl.Agent\ParentalControl.Agent.csproj" `
+    --configuration $Configuration `
+    --runtime win-x64 `
+    --self-contained true `
+    --output "$publishDir\agent"
+
+if ($LASTEXITCODE -ne 0) { Write-Error "Agent publish failed."; exit 1 }
+
 # Build Installer
 Write-Host "`n=== Building Installer ===" -ForegroundColor Cyan
 & $InnoSetupPath $issFile
