@@ -17,10 +17,12 @@ Debug.Assert(!TotpService.VerifyCode(secret, "000000"), "Random dummy code shoul
 Debug.Assert(!TotpService.VerifyCode(secret, ""), "Empty code should fail");
 Debug.Assert(!TotpService.VerifyCode(secret, "12345"), "Short code should fail");
 Console.WriteLine("✅ TOTP Service Verification Passed.");
-
-// 2. Initialize Database in test environment
-DatabaseManager.Initialize();
-
+var tempDir = Path.Combine(Path.GetTempPath(), "ParentalControlTest_" + Guid.NewGuid().ToString("N"));
+Environment.SetEnvironmentVariable("PARENTAL_CONTROL_DATA_DIR", tempDir);
+try
+{
+    // 2. Initialize Database in test environment
+    DatabaseManager.Initialize();
 // 3. Test Settings
 SettingsRepository.Set("test_key", "test_value_123");
 var val = SettingsRepository.Get("test_key");
@@ -75,6 +77,18 @@ Console.WriteLine("✅ Weekly Schedule & Fallback Verification Passed.");
 // Cleanup test user
 UserRepository.DeleteBySid(testSid);
 ScheduleRepository.DeleteForUser(user.Id);
-Console.WriteLine("✅ Cleanup Completed.");
+    Console.WriteLine("✅ Cleanup Completed.");
 
-Console.WriteLine("\n🎉 ALL ASSERTIONS PASSED SUCCESSFULLY!");
+    Console.WriteLine("\n🎉 ALL ASSERTIONS PASSED SUCCESSFULLY!");
+}
+finally
+{
+    try
+    {
+        if (Directory.Exists(tempDir))
+        {
+            Directory.Delete(tempDir, true);
+        }
+    }
+    catch { }
+}
