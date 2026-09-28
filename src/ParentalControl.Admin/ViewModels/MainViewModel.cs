@@ -11,6 +11,7 @@ public partial class MainViewModel : ObservableObject
 
     private readonly DashboardViewModel _dashboardVm;
     private readonly DispatcherTimer _serviceTimer;
+    private SettingsViewModel? _settingsVm;
 
     [ObservableProperty]
     private ObservableObject _currentView = null!;
@@ -70,6 +71,19 @@ public partial class MainViewModel : ObservableObject
         var detailVm = new UserDetailViewModel(user, _dashboardVm.SidToUsername, NavigateBack);
         CurrentView = detailVm;
         detailVm.LoadAll();
+    }
+
+    [CommunityToolkit.Mvvm.Input.RelayCommand]
+    private void ShowDashboard()
+    {
+        NavigateBack();
+    }
+
+    [CommunityToolkit.Mvvm.Input.RelayCommand]
+    private void ShowSettings()
+    {
+        _settingsVm = new SettingsViewModel(NavigateBack);
+        CurrentView = _settingsVm;
     }
 
     private void NavigateBack()

@@ -103,6 +103,27 @@
                         </StackPanel>
                     </Grid>
                 </md:Card>
+                <!-- ═══ Quick Grace Bonus ═══ -->
+                <md:Card Padding="16,12" Margin="0,0,0,24" Background="#1e293b" md:ElevationAssist.Elevation="Dp1">
+                    <DockPanel>
+                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                            <Button Content="+15 min" Command="{Binding AddBonus15Command}"
+                                    Style="{StaticResource MaterialDesignPaperButton}" Background="#16a34a" Foreground="White"
+                                    Padding="12,4" Height="28" Margin="0,0,8,0" />
+                            <Button Content="+30 min" Command="{Binding AddBonus30Command}"
+                                    Style="{StaticResource MaterialDesignPaperButton}" Background="#16a34a" Foreground="White"
+                                    Padding="12,4" Height="28" Margin="0,0,8,0" />
+                            <Button Content="+1 hr" Command="{Binding AddBonus60Command}"
+                                    Style="{StaticResource MaterialDesignPaperButton}" Background="#16a34a" Foreground="White"
+                                    Padding="12,4" Height="28" />
+                        </StackPanel>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="⚡ Quick Grace Time Extension" FontWeight="SemiBold" Foreground="White" />
+                            <TextBlock Text="{Binding TodayBonusMinutes, StringFormat='{}Today\'s Bonus Granted: {0} minutes'}"
+                                       FontSize="12" Opacity="0.7" Foreground="White" Margin="0,2,0,0" />
+                        </StackPanel>
+                    </DockPanel>
+                </md:Card>
 
                 <!-- ═══ User Limits ═══ -->
                 <md:ColorZone Mode="PrimaryMid" Padding="8,6" CornerRadius="4" Margin="0,0,0,8">
@@ -156,6 +177,61 @@
                         </StackPanel>
                     </StackPanel>
                 </md:Card>
+
+                <!-- ═══ 7-Day Weekly Schedule ═══ -->
+                <md:ColorZone Mode="PrimaryMid" Padding="8,6" CornerRadius="4" Margin="0,0,0,8">
+                    <TextBlock Text="7-Day Weekly Schedule"
+                               FontSize="14" FontWeight="DemiBold"
+                               Foreground="{DynamicResource MaterialDesign.Brush.Primary.Foreground}"
+                               VerticalAlignment="Center" />
+                </md:ColorZone>
+
+                <md:Card Padding="16" Margin="0,0,0,24" md:ElevationAssist.Elevation="Dp2">
+                    <StackPanel>
+                        <TextBlock Text="Customize individual daily minutes and curfews for each day of the week (falls back to default limits if unconfigured)."
+                                   Opacity="0.7" Margin="0,0,0,12" />
+
+                        <DataGrid ItemsSource="{Binding WeeklySchedules}"
+                                  AutoGenerateColumns="False"
+                                  CanUserAddRows="False"
+                                  CanUserDeleteRows="False"
+                                  Margin="0,0,0,12">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Day of Week" Binding="{Binding DayName}" IsReadOnly="True" Width="140" FontWeight="Bold" />
+                                <DataGridTextColumn Header="Daily Minutes" Binding="{Binding DailyMinutes}" Width="140" />
+                                <DataGridTextColumn Header="Schedule Start (HH:mm)" Binding="{Binding ScheduleStart}" Width="180" />
+                                <DataGridTextColumn Header="Schedule End (HH:mm)" Binding="{Binding ScheduleEnd}" Width="180" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+
+                        <Button Content="Save 7-Day Schedule"
+                                Command="{Binding SaveWeeklyScheduleCommand}"
+                                Style="{StaticResource MaterialDesignRaisedButton}"
+                                HorizontalAlignment="Left"
+                                Padding="24,8" />
+                    </StackPanel>
+                </md:Card>
+
+                <!-- ═══ Today's App & Game Activity ═══ -->
+                <md:ColorZone Mode="PrimaryMid" Padding="8,6" CornerRadius="4" Margin="0,0,0,8">
+                    <TextBlock Text="Today's App &amp; Game Activity"
+                               FontSize="14" FontWeight="DemiBold"
+                               Foreground="{DynamicResource MaterialDesign.Brush.Primary.Foreground}"
+                               VerticalAlignment="Center" />
+                </md:ColorZone>
+
+                <DataGrid ItemsSource="{Binding AppUsageRecords}"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          CanUserAddRows="False"
+                          MaxHeight="300"
+                          Margin="0,0,0,24">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Process Name" Binding="{Binding ProcessName}" Width="180" FontWeight="SemiBold" />
+                        <DataGridTextColumn Header="Window Title" Binding="{Binding WindowTitle}" Width="*" />
+                        <DataGridTextColumn Header="Active Minutes" Binding="{Binding Minutes}" Width="120" />
+                    </DataGrid.Columns>
+                </DataGrid>
 
                 <!-- ═══ Events ═══ -->
                 <md:ColorZone Mode="PrimaryMid" Padding="8,6" CornerRadius="4" Margin="0,0,0,8">
