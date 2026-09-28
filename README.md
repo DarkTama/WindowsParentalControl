@@ -88,6 +88,18 @@ An enhanced screen time and schedule curfew management system for Windows 10/11 
 
 ---
 
+## Prerequisites & System Requirements
+
+### For End-Users / Production Deployment
+- **OS**: Windows 10 or Windows 11 (64-bit only).
+- **Dependencies**: **None.** The compiled installer (`ParentalControlSetup.exe`) and published `.exe` packages are built with `--self-contained true`. All .NET runtime libraries, ASP.NET Core Kestrel web server, SQLite engine, and WPF components are bundled directly inside the executables.
+
+### For Developers Running from Source
+- **OS**: Windows 10 or Windows 11 (x64).
+- **.NET SDK**: .NET 8.0 or .NET 9.0 SDK (supports automatic major roll-forward).
+- **Inno Setup 6**: Optional, only required to generate the setup installer via `build.ps1`.
+
+---
 ## How to Test Locally
 
 ### 1. Run Automated Verification Tests
