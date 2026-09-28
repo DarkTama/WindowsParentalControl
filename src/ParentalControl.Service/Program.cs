@@ -17,7 +17,9 @@ builder.Services.AddHostedService<UsageMonitorWorker>();
 builder.Services.AddSingleton<TelegramBotService>();
 builder.Services.AddHostedService<TelegramWorker>();
 builder.Services.AddHostedService<WebServerHost>();
-builder.Services.AddSingleton<IHostLifetime>(sp =>
+if (WindowsServiceHelpers.IsWindowsService())
+{
+    builder.Services.AddSingleton<IHostLifetime>(sp =>
 {
     var env = sp.GetRequiredService<IHostEnvironment>();
     var appLifetime = sp.GetRequiredService<IHostApplicationLifetime>();
@@ -27,9 +29,10 @@ builder.Services.AddSingleton<IHostLifetime>(sp =>
     var sessionTracker = sp.GetRequiredService<SessionTracker>();
     var serilogLogger = sp.GetRequiredService<Serilog.ILogger>();
 
-    return new ParentalControlServiceLifetime(
-        env, appLifetime, loggerFactory, hostOptions, serviceOptions, sessionTracker, serilogLogger);
-});
+        return new ParentalControlServiceLifetime(
+            env, appLifetime, loggerFactory, hostOptions, serviceOptions, sessionTracker, serilogLogger);
+    });
+}
 
 var host = builder.Build();
 
