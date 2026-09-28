@@ -65,11 +65,24 @@ public static class UserRepository
 
     public static void DeleteBySid(string sid)
     {
+        var user = GetBySid(sid);
+        if (user == null) return;
+
         using var connection = DatabaseManager.CreateConnection();
+        using var transaction = connection.BeginTransaction();
         using var cmd = connection.CreateCommand();
-        cmd.CommandText = "DELETE FROM users WHERE sid = @sid";
-        cmd.Parameters.AddWithValue("@sid", sid);
+        cmd.Transaction = transaction;
+        cmd.CommandText = """
+            DELETE FROM schedule_days WHERE user_id = @id;
+            DELETE FROM grace_requests WHERE user_id = @id;
+            DELETE FROM app_usage WHERE user_id = @id;
+            DELETE FROM usage WHERE user_id = @id;
+            DELETE FROM limits WHERE user_id = @id;
+            DELETE FROM users WHERE id = @id;
+            """;
+        cmd.Parameters.AddWithValue("@id", user.Id);
         cmd.ExecuteNonQuery();
+        transaction.Commit();
     }
 
     private static User ReadUser(SqliteDataReader reader)

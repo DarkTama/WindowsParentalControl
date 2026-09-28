@@ -5,4 +5,7 @@
     <Project Path="src\ParentalControl.Admin\ParentalControl.Admin.csproj" />
     <Project Path="src\ParentalControl.Agent\ParentalControl.Agent.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests\ParentalControl.Tests\ParentalControl.Tests.csproj" />
+  </Folder>
 </Solution>

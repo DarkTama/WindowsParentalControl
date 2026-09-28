@@ -6,7 +6,7 @@ namespace ParentalControl.Core.Data;
 
 public static class DatabaseManager
 {
-    private const string DataDirectory = @"C:\ProgramData\ParentalControl";
+    private static string DataDirectory => Environment.GetEnvironmentVariable("PARENTAL_CONTROL_DATA_DIR") ?? @"C:\ProgramData\ParentalControl";
     private const string DatabaseFileName = "data.db";
     public const int RetentionDays = 30;
 
@@ -19,22 +19,32 @@ public static class DatabaseManager
         var dirInfo = new DirectoryInfo(DataDirectory);
         if (!dirInfo.Exists)
         {
-            dirInfo.Create();
-            var security = dirInfo.GetAccessControl();
-            security.SetAccessRuleProtection(true, false);
-            security.AddAccessRule(new FileSystemAccessRule(
-                new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
-                FileSystemRights.FullControl,
-                InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
-                PropagationFlags.None,
-                AccessControlType.Allow));
-            security.AddAccessRule(new FileSystemAccessRule(
-                new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null),
-                FileSystemRights.FullControl,
-                InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
-                PropagationFlags.None,
-                AccessControlType.Allow));
-            dirInfo.SetAccessControl(security);
+            Directory.CreateDirectory(DataDirectory);
+            if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("PARENTAL_CONTROL_DATA_DIR")))
+            {
+                try
+                {
+                    var security = dirInfo.GetAccessControl();
+                    security.SetAccessRuleProtection(true, false);
+                    security.AddAccessRule(new FileSystemAccessRule(
+                        new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
+                        FileSystemRights.FullControl,
+                        InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                        PropagationFlags.None,
+                        AccessControlType.Allow));
+                    security.AddAccessRule(new FileSystemAccessRule(
+                        new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null),
+                        FileSystemRights.FullControl,
+                        InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                        PropagationFlags.None,
+                        AccessControlType.Allow));
+                    dirInfo.SetAccessControl(security);
+                }
+                catch
+                {
+                    // Best-effort ACL for environments without elevation
+                }
+            }
         }
 
         using var connection = CreateConnection();
