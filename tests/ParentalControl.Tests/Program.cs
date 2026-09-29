@@ -102,6 +102,19 @@ var consoleId = SessionManager.GetActiveConsoleSessionId();
 Debug.Assert(consoleId >= -1, "GetActiveConsoleSessionId should return valid session ID or -1");
 Console.WriteLine("✅ User Discovery by Username & Console Session Detection Passed.");
 
+// 9. Test App Activity Hourly & Range Queries
+AppUsageRepository.AddMinutes(user.Id, today, "RobloxPlayerBeta.exe", "Roblox", 45, hour: 14);
+AppUsageRepository.AddMinutes(user.Id, today, "chrome.exe", "YouTube", 15, hour: 14);
+AppUsageRepository.AddMinutes(user.Id, today, "chrome.exe", "Homework", 30, hour: 16);
+
+var hourly = AppUsageRepository.GetHourlyDistribution(user.Id, today, today);
+Debug.Assert(hourly[14] == 60, "Hour 14 should have 60 min total");
+Debug.Assert(hourly[16] == 30, "Hour 16 should have 30 min total");
+var rangeApps = AppUsageRepository.GetUsageForRange(user.Id, today, today);
+Debug.Assert(rangeApps.Count == 2, "Should have 2 unique processes");
+Debug.Assert(rangeApps.First(a => a.ProcessName == "chrome.exe").Minutes == 45, "Chrome should have 45 min total");
+Console.WriteLine("✅ Hourly Activity & App Usage Range Verification Passed.");
+
 // Cleanup test user
 UserRepository.DeleteBySid(testSid);
 ScheduleRepository.DeleteForUser(user.Id);

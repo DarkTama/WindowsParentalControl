@@ -142,7 +142,7 @@ public partial class WidgetWindow : Window
         CollapsedPanel.Visibility = Visibility.Collapsed;
         ExpandedPanel.Visibility = Visibility.Visible;
         Width = 240;
-        Height = 172;
+        Height = 192;
     }
 
     private void RequestBtn_Click(object sender, RoutedEventArgs e)

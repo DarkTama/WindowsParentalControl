@@ -9,7 +9,7 @@
         ShowInTaskbar="False"
         ResizeMode="NoResize"
         Width="240"
-        Height="172"
+        Height="192"
         MouseLeftButtonDown="Window_MouseLeftButtonDown"
         SourceInitialized="Window_SourceInitialized">
 
@@ -17,7 +17,7 @@
         <!-- ═══ EXPANDED WIDGET ═══ -->
         <Border x:Name="ExpandedPanel"
                 Width="240"
-                Height="172"
+                Height="192"
                 Background="#131c2e"
                 BorderBrush="#2563eb"
                 BorderThickness="1.5"

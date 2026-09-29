@@ -118,6 +118,17 @@ public static class DatabaseManager
                 value TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS app_activity_hourly (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                date TEXT NOT NULL,
+                hour INTEGER NOT NULL,
+                process_name TEXT NOT NULL,
+                minutes INTEGER NOT NULL DEFAULT 0,
+                UNIQUE(user_id, date, hour, process_name),
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
+
             CREATE TABLE IF NOT EXISTS events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 timestamp TEXT NOT NULL,
@@ -130,6 +141,7 @@ public static class DatabaseManager
             CREATE INDEX IF NOT EXISTS idx_events_user_timestamp ON events (user_sid, timestamp);
             CREATE INDEX IF NOT EXISTS idx_grace_user_date ON grace_requests (user_id, date);
             CREATE INDEX IF NOT EXISTS idx_app_usage_user_date ON app_usage (user_id, date);
+            CREATE INDEX IF NOT EXISTS idx_app_activity_hourly_date ON app_activity_hourly (user_id, date);
             """;
         schemaCmd.ExecuteNonQuery();
 

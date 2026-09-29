@@ -87,6 +87,7 @@ public static class UserRepository
             DELETE FROM schedule_days WHERE user_id = @id;
             DELETE FROM grace_requests WHERE user_id = @id;
             DELETE FROM app_usage WHERE user_id = @id;
+            DELETE FROM app_activity_hourly WHERE user_id = @id;
             DELETE FROM usage WHERE user_id = @id;
             DELETE FROM limits WHERE user_id = @id;
             DELETE FROM users WHERE id = @id;

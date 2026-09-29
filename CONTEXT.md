@@ -47,3 +47,9 @@ A daily aggregation of active minutes spent per application process name and win
 
 ### Session Agent
 A lightweight background helper process executing within a Restricted User's active desktop session, responsible for foreground window activity sampling, system tray remaining-time display, and user grace request invocation.
+
+### Active Application
+The foreground process name and window title currently receiving user interaction in an active session, tracked in real-time by the background service.
+
+### Activity Timeline
+Historical daily aggregation of application usage durations and window titles for a Restricted User across past dates (retained for up to 30 days).

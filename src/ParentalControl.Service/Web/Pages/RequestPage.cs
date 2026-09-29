@@ -353,6 +353,7 @@ public static class RequestPage
                     if (totalSecondsRemaining <= 0) {
                         timerElem.style.color = '#ef4444';
                         return;
+                    }
                     if (isSessionTicking) {
                         totalSecondsRemaining--;
                     }

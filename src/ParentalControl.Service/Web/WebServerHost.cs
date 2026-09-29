@@ -20,6 +20,7 @@ public sealed class WebServerHost : BackgroundService
     private readonly TelegramBotService _telegramBotService;
     private readonly Serilog.ILogger _logger;
     private readonly HashSet<string> _validAdminTokens = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string ProcessName, string WindowTitle, DateTime LastSeen)> _liveActivities = new(StringComparer.OrdinalIgnoreCase);
 
     public WebServerHost(SessionTracker sessionTracker, TelegramBotService telegramBotService, Serilog.ILogger logger)
     {
@@ -284,7 +285,9 @@ public sealed class WebServerHost : BackgroundService
 
                 var user = UserRepository.GetByUsername(username);
                 if (user != null && user.IsRestricted)
+                if (user != null && user.IsRestricted)
                 {
+                    _liveActivities[user.Username] = (processName, windowTitle, DateTime.Now);
                     var today = DateOnly.FromDateTime(DateTime.Now);
                     AppUsageRepository.AddMinutes(user.Id, today, processName, windowTitle, 1);
                 }
@@ -370,6 +373,29 @@ public sealed class WebServerHost : BackgroundService
             var today = DateOnly.FromDateTime(DateTime.Now);
             var dayOfWeek = DateTime.Now.DayOfWeek;
             var users = UserRepository.GetAll().ToDictionary(u => u.Id, u => u);
+            var restrictedUsers = users.Values.Where(u => u.IsRestricted).ToList();
+
+            // Query parameters for ActivityWatch timeline
+            var filterUser = ctx.Request.Query["user"].ToString();
+            var filterDateStr = ctx.Request.Query["date"].ToString();
+            var filterRange = ctx.Request.Query["range"].ToString(); // "day" or "week"
+
+            var targetDate = today;
+            if (!string.IsNullOrWhiteSpace(filterDateStr) && DateOnly.TryParse(filterDateStr, out var parsedDate))
+            {
+                targetDate = parsedDate;
+            }
+
+            var fromDate = string.Equals(filterRange, "week", StringComparison.OrdinalIgnoreCase)
+                ? targetDate.AddDays(-6)
+                : targetDate;
+
+            int? targetUserId = null;
+            if (!string.IsNullOrWhiteSpace(filterUser) && !string.Equals(filterUser, "all", StringComparison.OrdinalIgnoreCase))
+            {
+                var matched = restrictedUsers.FirstOrDefault(u => string.Equals(u.Username, filterUser, StringComparison.OrdinalIgnoreCase));
+                if (matched != null) targetUserId = matched.Id;
+            }
 
             var sessionList = new List<object>();
             foreach (var (sessionId, activeSession) in _sessionTracker.ActiveSessions)
@@ -383,6 +409,19 @@ public sealed class WebServerHost : BackgroundService
                 var used = usage?.MinutesUsed ?? 0;
                 var remaining = limit != null ? Math.Max(0, totalAllowed - used) : 0;
 
+                string currentApp = "Inactive / Idle";
+                bool isAppLive = false;
+                if (_liveActivities.TryGetValue(activeSession.Username, out var live))
+                {
+                    if (DateTime.Now - live.LastSeen < TimeSpan.FromMinutes(2))
+                    {
+                        currentApp = string.IsNullOrWhiteSpace(live.WindowTitle)
+                            ? live.ProcessName
+                            : $"{live.ProcessName} — {live.WindowTitle}";
+                        isAppLive = true;
+                    }
+                }
+
                 sessionList.Add(new
                 {
                     sessionId,
@@ -392,7 +431,9 @@ public sealed class WebServerHost : BackgroundService
                     isLocked = activeSession.IsLocked,
                     remainingMinutes = remaining,
                     totalAllowed,
-                    curfew = limit != null ? $"{limit.ScheduleStart:HH:mm}–{limit.ScheduleEnd:HH:mm}" : "None"
+                    curfew = limit != null ? $"{limit.ScheduleStart:HH:mm}–{limit.ScheduleEnd:HH:mm}" : "None",
+                    currentApp,
+                    isAppLive
                 });
             }
 
@@ -407,22 +448,36 @@ public sealed class WebServerHost : BackgroundService
                     createdAt = r.CreatedAt.ToString("HH:mm:ss")
                 });
 
-            var todayAppUsage = users.Values.Where(u => u.IsRestricted)
-                .SelectMany(u => AppUsageRepository.GetForUserAndDate(u.Id, today).Select(a => new
-                {
-                    username = u.Username,
-                    a.ProcessName,
-                    a.WindowTitle,
-                    a.Minutes
-                }))
-                .OrderByDescending(a => a.Minutes)
-                .Take(25);
+            // Hourly distribution for 24-hour timeline bar
+            var hourlyDistribution = AppUsageRepository.GetHourlyDistribution(targetUserId, fromDate, targetDate);
+
+            // Detailed app usage for selected user & date range
+            var usageRecords = AppUsageRepository.GetUsageForRange(targetUserId, fromDate, targetDate);
+            var totalMinutes = usageRecords.Sum(r => r.Minutes);
+
+            var appUsageList = usageRecords.Select(r => new
+            {
+                userId = r.UserId,
+                username = users.TryGetValue(r.UserId, out var u) ? u.Username : $"User #{r.UserId}",
+                processName = r.ProcessName,
+                windowTitle = r.WindowTitle,
+                minutes = r.Minutes,
+                percentage = totalMinutes > 0 ? (int)Math.Round((double)r.Minutes / totalMinutes * 100) : 0
+            }).ToList();
+
+            var availableUsers = restrictedUsers.Select(u => u.Username).ToList();
 
             return Results.Ok(new
             {
                 sessions = sessionList,
                 requests = recentRequests,
-                appUsage = todayAppUsage
+                appUsage = appUsageList,
+                hourlyTimeline = hourlyDistribution,
+                totalMinutes,
+                availableUsers,
+                selectedUser = string.IsNullOrWhiteSpace(filterUser) ? "all" : filterUser,
+                selectedDate = targetDate.ToString("yyyy-MM-dd"),
+                selectedRange = string.Equals(filterRange, "week", StringComparison.OrdinalIgnoreCase) ? "week" : "day"
             });
         });
 
