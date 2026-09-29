@@ -151,11 +151,30 @@ begin
                mbInformation, MB_OK);
 end;
 
+procedure StopRunningProcesses();
+var
+    ResultCode: Integer;
+begin
+    Exec('taskkill', ExpandConstant('/F /T /IM {#AgentExeName}'),
+         '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Exec('taskkill', ExpandConstant('/F /T /IM {#MyAppExeName}'),
+         '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Sleep(1500);
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+    StopRunningProcesses();
+    if ServiceExists() then
+        StopAndDeleteService();
+    Result := '';
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
     if CurStep = ssInstall then
     begin
-        // Before files are copied: stop existing service so files are not locked
+        StopRunningProcesses();
         if ServiceExists() then
             StopAndDeleteService();
     end
