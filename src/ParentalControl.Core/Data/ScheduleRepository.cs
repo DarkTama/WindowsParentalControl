@@ -82,6 +82,16 @@ public static class ScheduleRepository
         cmd.ExecuteNonQuery();
     }
 
+    public static void DeleteDaySchedule(int userId, DayOfWeek day)
+    {
+        using var connection = DatabaseManager.CreateConnection();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "DELETE FROM schedule_days WHERE user_id = @userId AND day_of_week = @day";
+        cmd.Parameters.AddWithValue("@userId", userId);
+        cmd.Parameters.AddWithValue("@day", (int)day);
+        cmd.ExecuteNonQuery();
+    }
+
     public static void DeleteForUser(int userId)
     {
         using var connection = DatabaseManager.CreateConnection();

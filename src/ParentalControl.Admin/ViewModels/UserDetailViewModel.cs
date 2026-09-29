@@ -10,7 +10,20 @@ namespace ParentalControl.Admin.ViewModels;
 public partial class DayScheduleRow : ObservableObject
 {
     public DayOfWeek DayOfWeek { get; set; }
-    public string DayName => DayOfWeek.ToString();
+    public string DayName => DayOfWeek switch
+    {
+        DayOfWeek.Monday => "Senin (Monday)",
+        DayOfWeek.Tuesday => "Selasa (Tuesday)",
+        DayOfWeek.Wednesday => "Rabu (Wednesday)",
+        DayOfWeek.Thursday => "Kamis (Thursday)",
+        DayOfWeek.Friday => "Jumat (Friday)",
+        DayOfWeek.Saturday => "Sabtu (Saturday)",
+        DayOfWeek.Sunday => "Minggu (Sunday)",
+        _ => DayOfWeek.ToString()
+    };
+
+    [ObservableProperty]
+    private bool _isCustom;
 
     [ObservableProperty]
     private int _dailyMinutes = 120;
@@ -112,15 +125,21 @@ public partial class UserDetailViewModel : ObservableObject
         var existing = ScheduleRepository.GetWeeklySchedule(User.Id).ToDictionary(s => s.DayOfWeek, s => s);
         var list = new ObservableCollection<DayScheduleRow>();
 
-        // Sunday (0) through Saturday (6)
-        for (int i = 0; i <= 6; i++)
+        // Order: Monday (1) to Friday (5), Saturday (6), Sunday (0)
+        var dayOrder = new[]
         {
-            var day = (DayOfWeek)i;
+            DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday,
+            DayOfWeek.Thursday, DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday
+        };
+
+        foreach (var day in dayOrder)
+        {
             if (existing.TryGetValue(day, out var s))
             {
                 list.Add(new DayScheduleRow
                 {
                     DayOfWeek = day,
+                    IsCustom = true,
                     DailyMinutes = s.DailyMinutes,
                     ScheduleStart = s.ScheduleStart.ToString("HH:mm"),
                     ScheduleEnd = s.ScheduleEnd.ToString("HH:mm")
@@ -131,6 +150,7 @@ public partial class UserDetailViewModel : ObservableObject
                 list.Add(new DayScheduleRow
                 {
                     DayOfWeek = day,
+                    IsCustom = false,
                     DailyMinutes = DailyMinutes,
                     ScheduleStart = ScheduleStart,
                     ScheduleEnd = ScheduleEnd
@@ -143,35 +163,88 @@ public partial class UserDetailViewModel : ObservableObject
     [RelayCommand]
     private void SaveWeeklySchedule()
     {
+        int savedCustomCount = 0;
         foreach (var row in WeeklySchedules)
         {
-            if (!TimeOnly.TryParse(row.ScheduleStart, out var start) || !TimeOnly.TryParse(row.ScheduleEnd, out var end))
+            if (row.IsCustom)
             {
-                MessageBox.Show($"Invalid time format for {row.DayName}. Use HH:mm.", "Validation Error", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-            if (start >= end)
-            {
-                MessageBox.Show($"Schedule start must be before end for {row.DayName}.", "Validation Error", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
-            if (row.DailyMinutes < 1 || row.DailyMinutes > 1440)
-            {
-                MessageBox.Show($"Minutes must be between 1 and 1440 for {row.DayName}.", "Validation Error", MessageBoxButton.OK, MessageBoxImage.Warning);
-                return;
-            }
+                if (!TimeOnly.TryParse(row.ScheduleStart, out var start) || !TimeOnly.TryParse(row.ScheduleEnd, out var end))
+                {
+                    MessageBox.Show($"Format jam salah untuk {row.DayName}. Gunakan format HH:mm.", "Validation Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                if (start >= end)
+                {
+                    MessageBox.Show($"Jam mulai harus lebih awal dari jam selesai untuk {row.DayName}.", "Validation Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                if (row.DailyMinutes < 1 || row.DailyMinutes > 1440)
+                {
+                    MessageBox.Show($"Menit penggunaan harus antara 1 dan 1440 untuk {row.DayName}.", "Validation Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
 
-            ScheduleRepository.SaveDaySchedule(new DaySchedule
+                ScheduleRepository.SaveDaySchedule(new DaySchedule
+                {
+                    UserId = User.Id,
+                    DayOfWeek = row.DayOfWeek,
+                    DailyMinutes = row.DailyMinutes,
+                    ScheduleStart = start,
+                    ScheduleEnd = end
+                });
+                savedCustomCount++;
+            }
+            else
             {
-                UserId = User.Id,
-                DayOfWeek = row.DayOfWeek,
-                DailyMinutes = row.DailyMinutes,
-                ScheduleStart = start,
-                ScheduleEnd = end
-            });
+                // Untoggled: delete day override to fall back to baseline default
+                ScheduleRepository.DeleteDaySchedule(User.Id, row.DayOfWeek);
+            }
         }
 
-        MessageBox.Show("7-Day schedule saved successfully.", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
+        MessageBox.Show($"Jadwal 7 hari berhasil disimpan ({savedCustomCount} hari khusus, {7 - savedCustomCount} hari mengikuti aturan standar).", "Jadwal Disimpan", MessageBoxButton.OK, MessageBoxImage.Information);
+        User.RefreshLimits();
+    }
+
+    [RelayCommand]
+    private void ApplySchoolDaysPreset()
+    {
+        foreach (var row in WeeklySchedules)
+        {
+            if (row.DayOfWeek >= DayOfWeek.Monday && row.DayOfWeek <= DayOfWeek.Friday)
+            {
+                row.IsCustom = true;
+                row.DailyMinutes = 60;
+                row.ScheduleStart = "08:00";
+                row.ScheduleEnd = "20:00";
+            }
+        }
+    }
+
+    [RelayCommand]
+    private void ApplyWeekendPreset()
+    {
+        foreach (var row in WeeklySchedules)
+        {
+            if (row.DayOfWeek == DayOfWeek.Saturday || row.DayOfWeek == DayOfWeek.Sunday)
+            {
+                row.IsCustom = true;
+                row.DailyMinutes = 180;
+                row.ScheduleStart = "09:00";
+                row.ScheduleEnd = "23:00";
+            }
+        }
+    }
+
+    [RelayCommand]
+    private void ResetAllToDefault()
+    {
+        foreach (var row in WeeklySchedules)
+        {
+            row.IsCustom = false;
+            row.DailyMinutes = DailyMinutes;
+            row.ScheduleStart = ScheduleStart;
+            row.ScheduleEnd = ScheduleEnd;
+        }
     }
 
     public void LoadAppUsage()

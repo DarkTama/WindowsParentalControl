@@ -30,6 +30,16 @@ public static class UserRepository
         using var reader = cmd.ExecuteReader();
         return reader.Read() ? ReadUser(reader) : null;
     }
+    public static User? GetById(int id)
+    {
+        using var connection = DatabaseManager.CreateConnection();
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "SELECT id, sid, username, is_restricted FROM users WHERE id = @id";
+        cmd.Parameters.AddWithValue("@id", id);
+
+        using var reader = cmd.ExecuteReader();
+        return reader.Read() ? ReadUser(reader) : null;
+    }
     public static User? GetByUsername(string username)
     {
         using var connection = DatabaseManager.CreateConnection();

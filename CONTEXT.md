@@ -62,3 +62,21 @@ LocalSystem background mechanism utilizing `WTSQueryUserToken` and `CreateProces
 
 ### Curfew Countdown Clamping
 Enforcement policy ensuring countdown widgets and user request portals display `Math.Min(dailyRemaining, curfewRemaining)` so restricted users are visually warned of schedule cutoffs even when daily quota remains.
+
+### Screen Capture
+A full virtual-desktop graphical snapshot captured silently within an active Restricted User's interactive session via the Session Agent without visual notifications, window flash, or system sound.
+
+### Capture Mode
+The trigger configuration for screen captures, supporting Single-Shot (on-demand snapshot request) and Watch Mode (continuous periodic snapshot refresh at a fixed interval, such as 10 seconds).
+
+### Capture Storage
+The encrypted or access-controlled local disk directory (`%ProgramData%\ParentalControl\captures\`) retaining compressed JPEG screen captures mapped to database audit records, automatically pruned after a defined retention period (7 days).
+
+### Play Schedule (Jadwal Main)
+The transparent, user-facing schedule view displayed on the screen time request portal (`/request`) detailing baseline allowance and curfew hours alongside day-specific special allocations.
+
+### Sparse Schedule Override
+A persistence pattern where day-of-week limits are only stored in `schedule_days` when explicitly marked as custom by an Administrator; all untoggled days dynamically resolve to the baseline user limit.
+
+### Built-in Updater
+An administrative subsystem capable of querying GitHub Releases for newer binary packages, presenting release changelogs, downloading `ParentalControlSetup.exe`, and initiating automated silent in-place upgrades.

@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.Input;
 using ParentalControl.Core.Data;
 using ParentalControl.Core.Security;
 using ParentalControl.Core.Services;
+using ParentalControl.Core;
 
 namespace ParentalControl.Admin.ViewModels;
 
@@ -42,6 +43,34 @@ public partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty]
     private string _testStatus = string.Empty;
+
+    // Application Version & Built-in Updater
+    [ObservableProperty]
+    private string _currentVersion = AppVersion.DisplayName;
+
+    [ObservableProperty]
+    private string _updateStatus = string.Empty;
+
+    [ObservableProperty]
+    private bool _hasUpdate;
+
+    [ObservableProperty]
+    private string _latestVersion = string.Empty;
+
+    [ObservableProperty]
+    private string _releaseTitle = string.Empty;
+
+    [ObservableProperty]
+    private string _releaseNotes = string.Empty;
+
+    [ObservableProperty]
+    private string? _downloadUrl;
+
+    [ObservableProperty]
+    private bool _isCheckingUpdate;
+
+    [ObservableProperty]
+    private bool _isInstallingUpdate;
 
     // Customizable User Notification Messages
     [ObservableProperty]
@@ -293,5 +322,76 @@ public partial class SettingsViewModel : ObservableObject
         SettingsRepository.Set(SettingsRepository.KeyMsgBonusGranted, MsgBonusGranted.Trim());
 
         MessageBox.Show("Settings saved successfully.", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    [RelayCommand]
+    private async Task CheckForUpdatesAsync()
+    {
+        IsCheckingUpdate = true;
+        UpdateStatus = "Memeriksa pembaruan di GitHub Releases...";
+        try
+        {
+            var res = await UpdateService.CheckForUpdatesAsync();
+            if (res.Error != null)
+            {
+                UpdateStatus = $"Gagal memeriksa: {res.Error}";
+                HasUpdate = false;
+            }
+            else if (res.HasUpdate)
+            {
+                HasUpdate = true;
+                LatestVersion = res.LatestVersion;
+                ReleaseTitle = res.ReleaseTitle;
+                ReleaseNotes = res.ReleaseNotes;
+                DownloadUrl = res.DownloadUrl;
+                UpdateStatus = $"Pembaruan baru v{res.LatestVersion} tersedia!";
+            }
+            else
+            {
+                HasUpdate = false;
+                UpdateStatus = $"Aplikasi sudah menggunakan versi terbaru ({AppVersion.DisplayName}).";
+            }
+        }
+        catch (Exception ex)
+        {
+            UpdateStatus = $"Kesalahan: {ex.Message}";
+        }
+        finally
+        {
+            IsCheckingUpdate = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task ApplyUpdateAsync()
+    {
+        if (string.IsNullOrWhiteSpace(DownloadUrl))
+        {
+            MessageBox.Show("URL installer tidak ditemukan pada rilis ini.", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var confirm = MessageBox.Show(
+            $"Unduh dan pasang pembaruan v{LatestVersion} sekarang?\nLayanan dan agent akan dimuat ulang secara otomatis.",
+            "Konfirmasi Pembaruan",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question);
+
+        if (confirm != MessageBoxResult.Yes) return;
+
+        IsInstallingUpdate = true;
+        UpdateStatus = "Mengunduh file installer ParentalControlSetup.exe...";
+        var (success, msg) = await UpdateService.DownloadAndApplyUpdateAsync(DownloadUrl);
+        UpdateStatus = msg;
+        IsInstallingUpdate = false;
+
+        if (success)
+        {
+            MessageBox.Show(msg, "Pembaruan Dimulai", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        else
+        {
+            MessageBox.Show(msg, "Gagal Memperbarui", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
 }

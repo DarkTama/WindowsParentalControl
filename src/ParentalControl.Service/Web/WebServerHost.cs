@@ -12,6 +12,7 @@ using ParentalControl.Core.Platform;
 using ParentalControl.Core.Security;
 using ParentalControl.Core.Services;
 using ParentalControl.Service.Web.Pages;
+using ParentalControl.Core;
 
 namespace ParentalControl.Service.Web;
 
@@ -200,6 +201,39 @@ public sealed class WebServerHost : BackgroundService
 
             var availableUsernames = restrictedUsers.Select(u => u.Username).ToList();
 
+            var baseLimit = LimitRepository.GetByUserId(targetUser.Id);
+            var customSchedules = ScheduleRepository.GetWeeklySchedule(targetUser.Id);
+            var defaultSummary = baseLimit != null
+                ? $"{baseLimit.DailyMinutes}m ({baseLimit.ScheduleStart:HH:mm}–{baseLimit.ScheduleEnd:HH:mm})"
+                : "120m (08:00–22:00)";
+
+            var dayNames = new (DayOfWeek Day, string Name)[]
+            {
+                (DayOfWeek.Monday, "Senin"),
+                (DayOfWeek.Tuesday, "Selasa"),
+                (DayOfWeek.Wednesday, "Rabu"),
+                (DayOfWeek.Thursday, "Kamis"),
+                (DayOfWeek.Friday, "Jumat"),
+                (DayOfWeek.Saturday, "Sabtu"),
+                (DayOfWeek.Sunday, "Minggu")
+            };
+
+            var weeklySchedule = dayNames.Select(dn =>
+            {
+                var custom = customSchedules.FirstOrDefault(s => s.DayOfWeek == dn.Day);
+                int mins = custom != null ? custom.DailyMinutes : (baseLimit?.DailyMinutes ?? 120);
+                var start = custom != null ? custom.ScheduleStart : (baseLimit?.ScheduleStart ?? new TimeOnly(8, 0));
+                var end = custom != null ? custom.ScheduleEnd : (baseLimit?.ScheduleEnd ?? new TimeOnly(22, 0));
+                return new RequestPage.ScheduleDayView(
+                    dn.Day,
+                    dn.Name,
+                    mins,
+                    $"{start:HH:mm}–{end:HH:mm}",
+                    custom != null,
+                    dn.Day == dayOfWeek
+                );
+            }).ToList();
+
             var html = RequestPage.Render(
                 targetUser.Username,
                 remaining,
@@ -213,7 +247,9 @@ public sealed class WebServerHost : BackgroundService
                 isAdminTesting,
                 availableUsernames,
                 isSessionActive,
-                isSessionLocked);
+                isSessionLocked,
+                weeklySchedule,
+                defaultSummary);
             return Results.Content(html, "text/html");
         });
 
@@ -638,11 +674,26 @@ public sealed class WebServerHost : BackgroundService
             }).ToList();
 
             var availableUsers = restrictedUsers.Select(u => u.Username).ToList();
+            var managedUsers = restrictedUsers.Select(u =>
+            {
+                var baseLim = LimitRepository.GetByUserId(u.Id);
+                var customList = ScheduleRepository.GetWeeklySchedule(u.Id);
+                return new
+                {
+                    id = u.Id,
+                    username = u.Username,
+                    baseMinutes = baseLim?.DailyMinutes ?? 120,
+                    baseStart = baseLim != null ? baseLim.ScheduleStart.ToString("HH:mm") : "08:00",
+                    baseEnd = baseLim != null ? baseLim.ScheduleEnd.ToString("HH:mm") : "22:00",
+                    customCount = customList.Count
+                };
+            }).ToList();
 
             return Results.Ok(new
             {
                 sessions = sessionList,
                 requests = recentRequests,
+                managedUsers,
                 appUsage = appUsageList,
                 hourlyTimeline = hourlyDistribution,
                 totalMinutes,
@@ -953,6 +1004,172 @@ public sealed class WebServerHost : BackgroundService
 
             var success = await _telegramBotService.SendPhotoAsync(chatId, photoBytes, caption);
             return Results.Ok(new { success });
+        });
+
+        // Admin Schedule Management GET API
+        app.MapGet("/api/admin/schedule", (HttpContext ctx) =>
+        {
+            if (!CheckAuth(ctx)) return Results.Unauthorized();
+            var userIdStr = ctx.Request.Query["userId"].ToString();
+            if (!int.TryParse(userIdStr, out var userId))
+            {
+                return Results.BadRequest(new { error = "Invalid userId" });
+            }
+
+            var user = UserRepository.GetById(userId);
+            if (user == null)
+            {
+                return Results.NotFound(new { error = "User not found" });
+            }
+
+            var baseLimit = LimitRepository.GetByUserId(userId);
+            var customSchedules = ScheduleRepository.GetWeeklySchedule(userId);
+
+            var dayNames = new (DayOfWeek Day, string Name)[]
+            {
+                (DayOfWeek.Monday, "Senin"),
+                (DayOfWeek.Tuesday, "Selasa"),
+                (DayOfWeek.Wednesday, "Rabu"),
+                (DayOfWeek.Thursday, "Kamis"),
+                (DayOfWeek.Friday, "Jumat"),
+                (DayOfWeek.Saturday, "Sabtu"),
+                (DayOfWeek.Sunday, "Minggu")
+            };
+
+            var baseMinutes = baseLimit?.DailyMinutes ?? 120;
+            var baseStart = baseLimit != null ? baseLimit.ScheduleStart.ToString("HH:mm") : "08:00";
+            var baseEnd = baseLimit != null ? baseLimit.ScheduleEnd.ToString("HH:mm") : "22:00";
+
+            var days = dayNames.Select(dn =>
+            {
+                var custom = customSchedules.FirstOrDefault(s => s.DayOfWeek == dn.Day);
+                return new
+                {
+                    dayOfWeek = (int)dn.Day,
+                    dayName = dn.Name,
+                    isCustom = custom != null,
+                    dailyMinutes = custom?.DailyMinutes ?? baseMinutes,
+                    scheduleStart = custom != null ? custom.ScheduleStart.ToString("HH:mm") : baseStart,
+                    scheduleEnd = custom != null ? custom.ScheduleEnd.ToString("HH:mm") : baseEnd
+                };
+            }).ToList();
+
+            return Results.Ok(new
+            {
+                userId = user.Id,
+                username = user.Username,
+                baseDailyMinutes = baseMinutes,
+                baseScheduleStart = baseStart,
+                baseScheduleEnd = baseEnd,
+                days
+            });
+        });
+
+        // Admin Schedule Management POST API
+        app.MapPost("/api/admin/schedule", async (HttpContext ctx) =>
+        {
+            if (!CheckAuth(ctx)) return Results.Unauthorized();
+            try
+            {
+                using var reader = new StreamReader(ctx.Request.Body);
+                var body = await reader.ReadToEndAsync();
+                var doc = JsonDocument.Parse(body);
+                var root = doc.RootElement;
+
+                var userId = root.GetProperty("userId").GetInt32();
+                var baseMinutes = root.GetProperty("baseDailyMinutes").GetInt32();
+                var baseStartStr = root.GetProperty("baseScheduleStart").GetString() ?? "08:00";
+                var baseEndStr = root.GetProperty("baseScheduleEnd").GetString() ?? "22:00";
+
+                if (!TimeOnly.TryParse(baseStartStr, out var baseStart) || !TimeOnly.TryParse(baseEndStr, out var baseEnd) || baseStart >= baseEnd)
+                {
+                    return Results.BadRequest(new { error = "Jam batas standar tidak valid (Format HH:mm, jam mulai harus lebih awal dari jam selesai)." });
+                }
+                if (baseMinutes < 1 || baseMinutes > 1440)
+                {
+                    return Results.BadRequest(new { error = "Menit harian harus antara 1 dan 1440." });
+                }
+
+                // Save base limits
+                LimitRepository.Upsert(new LimitConfig
+                {
+                    UserId = userId,
+                    DailyMinutes = baseMinutes,
+                    ScheduleStart = baseStart,
+                    ScheduleEnd = baseEnd
+                });
+
+                // Process 7 days
+                if (root.TryGetProperty("days", out var daysElement) && daysElement.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var d in daysElement.EnumerateArray())
+                    {
+                        var dayOfWeek = (DayOfWeek)d.GetProperty("dayOfWeek").GetInt32();
+                        var isCustom = d.GetProperty("isCustom").GetBoolean();
+                        if (isCustom)
+                        {
+                            var dMinutes = d.GetProperty("dailyMinutes").GetInt32();
+                            var dStartStr = d.GetProperty("scheduleStart").GetString() ?? "08:00";
+                            var dEndStr = d.GetProperty("scheduleEnd").GetString() ?? "22:00";
+                            if (TimeOnly.TryParse(dStartStr, out var dStart) && TimeOnly.TryParse(dEndStr, out var dEnd) && dStart < dEnd)
+                            {
+                                ScheduleRepository.SaveDaySchedule(new DaySchedule
+                                {
+                                    UserId = userId,
+                                    DayOfWeek = dayOfWeek,
+                                    DailyMinutes = Math.Clamp(dMinutes, 1, 1440),
+                                    ScheduleStart = dStart,
+                                    ScheduleEnd = dEnd
+                                });
+                            }
+                        }
+                        else
+                        {
+                            ScheduleRepository.DeleteDaySchedule(userId, dayOfWeek);
+                        }
+                    }
+                }
+
+                return Results.Ok(new { success = true, message = "Jadwal berhasil disimpan." });
+            }
+            catch (Exception ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        // Admin Check Updates API
+        app.MapGet("/api/admin/update/check", async (HttpContext ctx) =>
+        {
+            if (!CheckAuth(ctx)) return Results.Unauthorized();
+            var res = await UpdateService.CheckForUpdatesAsync();
+            return Results.Ok(new
+            {
+                currentVersion = AppVersion.DisplayName,
+                latestVersion = res.LatestVersion,
+                hasUpdate = res.HasUpdate,
+                releaseTitle = res.ReleaseTitle,
+                releaseNotes = res.ReleaseNotes,
+                downloadUrl = res.DownloadUrl,
+                error = res.Error
+            });
+        });
+
+        // Admin Apply Update API
+        app.MapPost("/api/admin/update/apply", async (HttpContext ctx) =>
+        {
+            if (!CheckAuth(ctx)) return Results.Unauthorized();
+            using var reader = new StreamReader(ctx.Request.Body);
+            var body = await reader.ReadToEndAsync();
+            var doc = JsonDocument.Parse(body);
+            var downloadUrl = doc.RootElement.GetProperty("downloadUrl").GetString();
+            if (string.IsNullOrWhiteSpace(downloadUrl))
+            {
+                return Results.BadRequest(new { error = "Download URL required." });
+            }
+
+            var (success, msg) = await UpdateService.DownloadAndApplyUpdateAsync(downloadUrl);
+            return Results.Ok(new { success, message = msg });
         });
 
         _logger.Information("Starting embedded WebServer on http://0.0.0.0:5050");

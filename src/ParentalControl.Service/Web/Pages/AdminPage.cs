@@ -125,8 +125,13 @@ public static class AdminPage
         </head>
         <body>
             <header>
-                <h1>🛡️ Parental Control Remote Admin</h1>
+                <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+                    <h1 style="margin:0">🛡️ Parental Control Remote Admin</h1>
+                    <span class="badge" style="background:#1e293b;color:#94a3b8" id="versionBadge">v1.1.0</span>
+                    <button id="btnUpdateNotice" class="badge" style="display:none;background:#15803d;color:#dcfce7;border:none;cursor:pointer;padding:0.25rem 0.6rem;font-weight:600" onclick="checkAppUpdates()">🚀 Update Available!</button>
+                </div>
                 <div class="actions">
+                    <button class="btn btn-secondary" onclick="checkAppUpdates()">🚀 Check Update</button>
                     <button class="btn btn-secondary" onclick="loadDashboard()">🔄 Refresh</button>
                     <a href="/api/admin/logout" class="btn btn-secondary">🚪 Logout</a>
                 </div>
@@ -144,6 +149,17 @@ public static class AdminPage
                     <h2>🎮 Pending Grace Requests</h2>
                     <div id="requestsContainer">Loading requests...</div>
                 </div>
+            </div>
+
+            <!-- ═══ MANAGED ACCOUNTS & SCHEDULES ═══ -->
+            <div class="card" style="margin-bottom: 2rem;">
+                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;margin-bottom:1rem">
+                    <div>
+                        <h2>👥 Managed User Accounts &amp; Weekly Schedules</h2>
+                        <div style="font-size:0.8rem;color:#64748b">Configure default quotas, curfew windows, and per-day customized schedules</div>
+                    </div>
+                </div>
+                <div id="usersScheduleContainer">Loading managed accounts...</div>
             </div>
 
             <!-- ═══ LIVE SCREEN SUPERVISION CARD ═══ -->
@@ -277,6 +293,83 @@ public static class AdminPage
                 </div>
             </div>
 
+            <!-- ═══ SCHEDULE MANAGEMENT MODAL ═══ -->
+            <div id="scheduleModal" class="modal-backdrop">
+                <div class="modal-box" style="max-width: 650px; max-height: 90vh; overflow-y: auto;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+                        <h3 style="color:#38bdf8;margin:0">📅 Edit Schedule: <span id="schModalUsername"></span></h3>
+                        <button type="button" onclick="closeScheduleModal()" style="background:transparent;border:none;color:#94a3b8;font-size:1.2rem;cursor:pointer">✕</button>
+                    </div>
+                    
+                    <input type="hidden" id="schModalUserId" />
+
+                    <!-- Base Limits -->
+                    <div style="background:#090d16;border:1px solid #1e293b;border-radius:0.5rem;padding:0.85rem;margin-bottom:1rem">
+                        <div style="font-weight:700;font-size:0.85rem;color:#e2e8f0;margin-bottom:0.5rem">⚙️ Baseline Default Limits (Applied to Untoggled Days)</div>
+                        <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(140px, 1fr));gap:0.75rem">
+                            <div>
+                                <label style="font-size:0.75rem;color:#94a3b8">Daily Minutes:</label>
+                                <input type="number" id="baseMinutes" min="1" max="1440" style="width:100%;background:#131c2e;border:1px solid #334155;color:#fff;padding:0.4rem;border-radius:0.3rem" />
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem;color:#94a3b8">Curfew Start:</label>
+                                <input type="time" id="baseStart" style="width:100%;background:#131c2e;border:1px solid #334155;color:#fff;padding:0.4rem;border-radius:0.3rem" />
+                            </div>
+                            <div>
+                                <label style="font-size:0.75rem;color:#94a3b8">Curfew End:</label>
+                                <input type="time" id="baseEnd" style="width:100%;background:#131c2e;border:1px solid #334155;color:#fff;padding:0.4rem;border-radius:0.3rem" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Preset Toolbar -->
+                    <div style="display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:1rem">
+                        <button type="button" class="btn btn-secondary" style="font-size:0.75rem;padding:0.3rem 0.6rem" onclick="applySchedulePreset('school')">🎒 School Days (Mon–Fri 90m, 15:00–20:00)</button>
+                        <button type="button" class="btn btn-secondary" style="font-size:0.75rem;padding:0.3rem 0.6rem" onclick="applySchedulePreset('weekend')">🎉 Weekend (Sat–Sun 240m, 08:00–22:00)</button>
+                        <button type="button" class="btn btn-secondary" style="font-size:0.75rem;padding:0.3rem 0.6rem" onclick="applySchedulePreset('reset')">🔄 Reset All to Baseline</button>
+                    </div>
+
+                    <!-- 7-Day Matrix Table -->
+                    <div style="border:1px solid #1e293b;border-radius:0.5rem;overflow:hidden;margin-bottom:1.25rem">
+                        <table style="width:100%;font-size:0.8rem">
+                            <thead>
+                                <tr style="background:#090d16">
+                                    <th style="padding:0.5rem;text-align:left">Day</th>
+                                    <th style="padding:0.5rem;text-align:center">Custom?</th>
+                                    <th style="padding:0.5rem;text-align:left">Minutes</th>
+                                    <th style="padding:0.5rem;text-align:left">Curfew Window</th>
+                                </tr>
+                            </thead>
+                            <tbody id="schDaysTableBody">
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div id="schFeedback" style="display:none;padding:0.5rem;border-radius:0.4rem;font-size:0.8rem;margin-bottom:0.75rem"></div>
+
+                    <div style="display:flex;justify-content:flex-end;gap:0.5rem">
+                        <button type="button" class="btn btn-secondary" onclick="closeScheduleModal()">Cancel</button>
+                        <button type="button" class="btn btn-primary" id="btnSaveSchedule" onclick="saveScheduleModal()">💾 Save Schedule</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══ UPDATE MODAL ═══ -->
+            <div id="updateModal" class="modal-backdrop">
+                <div class="modal-box" style="max-width: 520px">
+                    <h3 style="color:#38bdf8;margin-bottom:0.75rem">🚀 Software Update</h3>
+                    <div id="updateModalBody">
+                        <p style="font-size:0.85rem;color:#cbd5e1;margin-bottom:0.75rem">
+                            Checking for updates on GitHub Releases...
+                        </p>
+                    </div>
+                    <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem">
+                        <button class="btn btn-secondary" onclick="closeUpdateModal()">Close</button>
+                        <button class="btn btn-success" id="btnApplyUpdate" style="display:none" onclick="applyAppUpdate()">⚡ Download &amp; Install Now</button>
+                    </div>
+                </div>
+            </div>
+
             <script>
                 const COLOR_PALETTE = [
                     '#38bdf8', '#818cf8', '#34d399', '#f472b6', '#fbbf24',
@@ -323,6 +416,7 @@ public static class AdminPage
                         renderTimeline(data.hourlyTimeline, data.selectedDate, data.selectedRange);
                         renderAppUsage(data.appUsage, data.totalMinutes);
                         loadLatestCapture();
+                        if (data.managedUsers) renderManagedUsers(data.managedUsers);
                     } catch (e) {
                         console.error('Error loading dashboard:', e);
                     }
@@ -372,6 +466,7 @@ public static class AdminPage
                                 <td>
                                     <div style="display:flex;gap:0.35rem;flex-wrap:wrap">
                                         <button class="btn btn-primary" style="padding:0.25rem 0.5rem" onclick="captureSessionScreen('${s.username}')">📸 Screen</button>
+                                        <button class="btn btn-secondary" style="padding:0.25rem 0.5rem" onclick="openScheduleModal(${s.userId}, '${s.username}')">📅 Schedule</button>
                                         <button class="btn btn-warning" style="padding:0.25rem 0.5rem" onclick="openLockModal(${s.sessionId}, '${s.username}')">🔒 Lock</button>
                                         <button class="btn btn-success" style="padding:0.25rem 0.5rem" onclick="grantTime(${s.userId}, 15)">+15m</button>
                                         <button class="btn btn-success" style="padding:0.25rem 0.5rem" onclick="grantTime(${s.userId}, 30)">+30m</button>
@@ -803,6 +898,285 @@ public static class AdminPage
                 loadDashboard();
                 setInterval(loadDashboard, 10000);
             </script>
+
+                function renderManagedUsers(users) {
+                    const c = document.getElementById('usersScheduleContainer');
+                    if (!users || users.length === 0) {
+                        c.innerHTML = '<div class="empty">No restricted child accounts registered yet.</div>';
+                        return;
+                    }
+                    let html = '<table><thead><tr><th>User</th><th>Standard Daily Quota</th><th>Standard Curfew</th><th>Custom Schedule Overrides</th><th>Action</th></tr></thead><tbody>';
+                    for (const u of users) {
+                        const customBadge = u.customCount > 0
+                            ? `<span class="badge" style="background:#4c1d95;color:#ddd6fe">${u.customCount} custom days</span>`
+                            : `<span class="badge" style="background:#1e293b;color:#94a3b8">All standard</span>`;
+                        html += `<tr>
+                            <td><strong>${u.username}</strong></td>
+                            <td><strong style="color:#38bdf8">${u.baseMinutes} mins</strong></td>
+                            <td>${u.baseStart} – ${u.baseEnd}</td>
+                            <td>${customBadge}</td>
+                            <td>
+                                <button class="btn btn-primary" style="padding:0.3rem 0.75rem" onclick="openScheduleModal(${u.id}, '${u.username}')">⚙️ Manage Schedule</button>
+                            </td>
+                        </tr>`;
+                    }
+                    html += '</tbody></table>';
+                    c.innerHTML = html;
+                }
+
+                let currentSchDays = [];
+
+                async function openScheduleModal(userId, username) {
+                    document.getElementById('schModalUserId').value = userId;
+                    document.getElementById('schModalUsername').textContent = username;
+                    document.getElementById('schFeedback').style.display = 'none';
+
+                    try {
+                        const res = await fetch(`/api/admin/schedule?userId=${userId}`);
+                        if (!res.ok) { alert('Failed to load schedule'); return; }
+                        const data = await res.json();
+
+                        document.getElementById('baseMinutes').value = data.baseDailyMinutes;
+                        document.getElementById('baseStart').value = data.baseScheduleStart;
+                        document.getElementById('baseEnd').value = data.baseScheduleEnd;
+
+                        currentSchDays = data.days;
+                        renderScheduleDaysTable();
+                        document.getElementById('scheduleModal').style.display = 'flex';
+                    } catch (e) {
+                        console.error('Error opening schedule modal:', e);
+                    }
+                }
+
+                function renderScheduleDaysTable() {
+                    const tbody = document.getElementById('schDaysTableBody');
+                    let html = '';
+                    for (let i = 0; i < currentSchDays.length; i++) {
+                        const d = currentSchDays[i];
+                        const isChecked = d.isCustom ? 'checked' : '';
+                        const disabledAttr = d.isCustom ? '' : 'disabled';
+                        const opacityStyle = d.isCustom ? 'opacity:1' : 'opacity:0.45';
+
+                        html += `
+                            <tr style="border-bottom:1px solid #1e293b">
+                                <td style="padding:0.5rem;font-weight:600">${d.dayName}</td>
+                                <td style="padding:0.5rem;text-align:center">
+                                    <input type="checkbox" id="chk_${i}" ${isChecked} onchange="toggleDayCustom(${i}, this.checked)" />
+                                </td>
+                                <td style="padding:0.5rem">
+                                    <input type="number" id="mins_${i}" value="${d.dailyMinutes}" min="1" max="1440" style="width:75px;background:#131c2e;border:1px solid #334155;color:#fff;padding:0.25rem 0.4rem;border-radius:0.3rem;${opacityStyle}" ${disabledAttr} onchange="currentSchDays[${i}].dailyMinutes = parseInt(this.value) || 120" />
+                                </td>
+                                <td style="padding:0.5rem">
+                                    <div style="display:flex;gap:0.3rem;align-items:center;${opacityStyle}">
+                                        <input type="time" id="start_${i}" value="${d.scheduleStart}" style="background:#131c2e;border:1px solid #334155;color:#fff;padding:0.25rem 0.4rem;border-radius:0.3rem" ${disabledAttr} onchange="currentSchDays[${i}].scheduleStart = this.value" />
+                                        <span style="color:#64748b">–</span>
+                                        <input type="time" id="end_${i}" value="${d.scheduleEnd}" style="background:#131c2e;border:1px solid #334155;color:#fff;padding:0.25rem 0.4rem;border-radius:0.3rem" ${disabledAttr} onchange="currentSchDays[${i}].scheduleEnd = this.value" />
+                                    </div>
+                                </td>
+                            </tr>`;
+                    }
+                    tbody.innerHTML = html;
+                }
+
+                function toggleDayCustom(index, isCustom) {
+                    currentSchDays[index].isCustom = isCustom;
+                    if (!isCustom) {
+                        currentSchDays[index].dailyMinutes = parseInt(document.getElementById('baseMinutes').value) || 120;
+                        currentSchDays[index].scheduleStart = document.getElementById('baseStart').value || '08:00';
+                        currentSchDays[index].scheduleEnd = document.getElementById('baseEnd').value || '22:00';
+                    }
+                    renderScheduleDaysTable();
+                }
+
+                function applySchedulePreset(type) {
+                    const baseM = parseInt(document.getElementById('baseMinutes').value) || 120;
+                    const baseS = document.getElementById('baseStart').value || '08:00';
+                    const baseE = document.getElementById('baseEnd').value || '22:00';
+
+                    for (let i = 0; i < currentSchDays.length; i++) {
+                        const d = currentSchDays[i];
+                        const dayOfWeek = d.dayOfWeek;
+                        if (type === 'school') {
+                            if (dayOfWeek >= 1 && dayOfWeek <= 5) {
+                                d.isCustom = true;
+                                d.dailyMinutes = 90;
+                                d.scheduleStart = '15:00';
+                                d.scheduleEnd = '20:00';
+                            }
+                        } else if (type === 'weekend') {
+                            if (dayOfWeek === 0 || dayOfWeek === 6) {
+                                d.isCustom = true;
+                                d.dailyMinutes = 240;
+                                d.scheduleStart = '08:00';
+                                d.scheduleEnd = '22:00';
+                            }
+                        } else if (type === 'reset') {
+                            d.isCustom = false;
+                            d.dailyMinutes = baseM;
+                            d.scheduleStart = baseS;
+                            d.scheduleEnd = baseE;
+                        }
+                    }
+                    renderScheduleDaysTable();
+                }
+
+                function closeScheduleModal() {
+                    document.getElementById('scheduleModal').style.display = 'none';
+                }
+
+                async function saveScheduleModal() {
+                    const userId = parseInt(document.getElementById('schModalUserId').value);
+                    const baseM = parseInt(document.getElementById('baseMinutes').value);
+                    const baseS = document.getElementById('baseStart').value;
+                    const baseE = document.getElementById('baseEnd').value;
+
+                    const fb = document.getElementById('schFeedback');
+                    const btn = document.getElementById('btnSaveSchedule');
+
+                    if (!baseM || baseM < 1 || baseM > 1440) {
+                        fb.style.display = 'block';
+                        fb.style.background = '#7f1d1d';
+                        fb.style.color = '#fecaca';
+                        fb.textContent = 'Menit harian standar harus antara 1 dan 1440.';
+                        return;
+                    }
+                    if (!baseS || !baseE || baseS >= baseE) {
+                        fb.style.display = 'block';
+                        fb.style.background = '#7f1d1d';
+                        fb.style.color = '#fecaca';
+                        fb.textContent = 'Jam batas standar tidak valid (Jam mulai harus sebelum jam selesai).';
+                        return;
+                    }
+
+                    btn.textContent = '⏳ Saving...';
+                    btn.disabled = true;
+
+                    try {
+                        const payload = {
+                            userId: userId,
+                            baseDailyMinutes: baseM,
+                            baseScheduleStart: baseS,
+                            baseScheduleEnd: baseE,
+                            days: currentSchDays
+                        };
+
+                        const res = await fetch('/api/admin/schedule', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+
+                        const data = await res.json();
+                        if (res.ok && data.success) {
+                            closeScheduleModal();
+                            loadDashboard();
+                        } else {
+                            fb.style.display = 'block';
+                            fb.style.background = '#7f1d1d';
+                            fb.style.color = '#fecaca';
+                            fb.textContent = data.error || 'Failed to save schedule.';
+                        }
+                    } catch (e) {
+                        fb.style.display = 'block';
+                        fb.style.background = '#7f1d1d';
+                        fb.style.color = '#fecaca';
+                        fb.textContent = 'Error: ' + e.message;
+                    } finally {
+                        btn.textContent = '💾 Save Schedule';
+                        btn.disabled = false;
+                    }
+                }
+
+                let pendingUpdateDownloadUrl = null;
+
+                async function checkAppUpdates() {
+                    try {
+                        const res = await fetch('/api/admin/update/check');
+                        if (!res.ok) return;
+                        const data = await res.json();
+                        document.getElementById('versionBadge').textContent = data.currentVersion || 'v1.1.0';
+
+                        const noticeBtn = document.getElementById('btnUpdateNotice');
+                        if (data.hasUpdate) {
+                            noticeBtn.style.display = 'inline-block';
+                            noticeBtn.textContent = `🚀 Update v${data.latestVersion} Available!`;
+                        } else {
+                            noticeBtn.style.display = 'none';
+                        }
+                        openUpdateModal(data);
+                    } catch (e) {
+                        console.error('Error checking updates:', e);
+                    }
+                }
+
+                function openUpdateModal(data) {
+                    const modal = document.getElementById('updateModal');
+                    const body = document.getElementById('updateModalBody');
+                    const applyBtn = document.getElementById('btnApplyUpdate');
+
+                    if (!data) {
+                        body.innerHTML = '<p style="color:#94a3b8">Memeriksa pembaruan...</p>';
+                        applyBtn.style.display = 'none';
+                        modal.style.display = 'flex';
+                        checkAppUpdates();
+                        return;
+                    }
+
+                    if (data.error) {
+                        body.innerHTML = `<div style="padding:0.75rem;background:#7f1d1d;color:#fecaca;border-radius:0.4rem">Gagal memeriksa pembaruan: ${data.error}</div>`;
+                        applyBtn.style.display = 'none';
+                    } else if (data.hasUpdate) {
+                        pendingUpdateDownloadUrl = data.downloadUrl;
+                        body.innerHTML = `
+                            <div style="margin-bottom:0.75rem">
+                                <span class="badge" style="background:#15803d;color:#dcfce7">Versi Baru Tersedia!</span>
+                                <div style="font-size:1.1rem;font-weight:700;color:#38bdf8;margin-top:0.4rem">${data.releaseTitle || 'v' + data.latestVersion}</div>
+                                <div style="font-size:0.8rem;color:#94a3b8">Versi saat ini: ${data.currentVersion} &bull; Rilis baru: v${data.latestVersion}</div>
+                            </div>
+                            <div style="background:#090d16;border:1px solid #1e293b;border-radius:0.4rem;padding:0.75rem;font-size:0.8rem;color:#cbd5e1;max-height:160px;overflow-y:auto;white-space:pre-wrap;margin-bottom:0.75rem">${data.releaseNotes || 'Perbaikan performa dan fitur baru.'}</div>
+                            <p style="font-size:0.8rem;color:#fef08a">⚠️ Pembaruan akan mengunduh file installer dan memuat ulang layanan serta agent secara otomatis.</p>
+                        `;
+                        applyBtn.style.display = 'inline-block';
+                    } else {
+                        body.innerHTML = `
+                            <div style="padding:0.75rem;background:#064e3b;color:#a7f3d0;border-radius:0.4rem;margin-bottom:0.5rem">
+                                ✅ Aplikasi sudah menggunakan versi terbaru (<strong>${data.currentVersion}</strong>).
+                            </div>
+                        `;
+                        applyBtn.style.display = 'none';
+                    }
+                    modal.style.display = 'flex';
+                }
+
+                function closeUpdateModal() {
+                    document.getElementById('updateModal').style.display = 'none';
+                }
+
+                async function applyAppUpdate() {
+                    if (!pendingUpdateDownloadUrl) {
+                        alert('URL rilis tidak ditemukan.');
+                        return;
+                    }
+                    const applyBtn = document.getElementById('btnApplyUpdate');
+                    applyBtn.disabled = true;
+                    applyBtn.textContent = '⏳ Mengunduh & Memasang...';
+
+                    try {
+                        const res = await fetch('/api/admin/update/apply', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ downloadUrl: pendingUpdateDownloadUrl })
+                        });
+                        const data = await res.json();
+                        alert(data.message || 'Pembaruan sedang berjalan.');
+                        closeUpdateModal();
+                    } catch (e) {
+                        alert('Gagal menerapkan update: ' + e.message);
+                    } finally {
+                        applyBtn.disabled = false;
+                        applyBtn.textContent = '⚡ Download & Install Now';
+                    }
+                }
         </body>
         </html>
         """;

@@ -2,6 +2,15 @@ namespace ParentalControl.Service.Web.Pages;
 
 public static class RequestPage
 {
+    public sealed record ScheduleDayView(
+        DayOfWeek Day,
+        string DayName,
+        int Minutes,
+        string TimeWindow,
+        bool IsCustom,
+        bool IsToday
+    );
+
     public static string Render(
         string username,
         int remainingMinutes,
@@ -15,7 +24,9 @@ public static class RequestPage
         bool isAdminTesting = false,
         List<string>? availableUsers = null,
         bool isSessionActive = true,
-        bool isSessionLocked = false)
+        bool isSessionLocked = false,
+        List<ScheduleDayView>? weeklySchedule = null,
+        string? defaultScheduleSummary = null)
     {
         var sessionStatusBadge = "";
         if (!isSessionActive)
@@ -78,6 +89,44 @@ public static class RequestPage
         }
 
         var disabledAttr = disableForm ? "disabled" : "";
+        var scheduleSection = "";
+        if (weeklySchedule != null && weeklySchedule.Count > 0)
+        {
+            var dayCards = new System.Text.StringBuilder();
+            foreach (var d in weeklySchedule)
+            {
+                var todayClass = d.IsToday ? "today-card" : "";
+                var todayBadge = d.IsToday ? """<span class="badge-today">Hari Ini</span>""" : "";
+                var customBadge = d.IsCustom ? """<span class="badge-custom">Khusus</span>""" : """<span class="badge-std">Standar</span>""";
+                dayCards.Append($$"""
+                    <div class="schedule-day-card {{todayClass}}">
+                        <div class="day-name">{{d.DayName}}</div>
+                        <div style="display:flex;gap:0.25rem;justify-content:center;flex-wrap:wrap">
+                            {{todayBadge}}
+                            {{customBadge}}
+                        </div>
+                        <div class="day-minutes">{{d.Minutes}}m</div>
+                        <div class="day-hours">{{d.TimeWindow}}</div>
+                    </div>
+                """);
+            }
+
+            var defText = !string.IsNullOrWhiteSpace(defaultScheduleSummary)
+                ? $"Standar: {defaultScheduleSummary}"
+                : "Standar: 120m (08:00–22:00)";
+
+            scheduleSection = $$"""
+                <div class="schedule-panel">
+                    <div class="schedule-header">
+                        <span class="schedule-title">📅 Jadwal Main Mingguan</span>
+                        <span class="schedule-baseline">{{defText}}</span>
+                    </div>
+                    <div class="schedule-grid">
+                        {{dayCards}}
+                    </div>
+                </div>
+            """;
+        }
 
         return $$"""
         <!DOCTYPE html>
@@ -278,6 +327,105 @@ public static class RequestPage
                 }
                 #feedback { margin-top: 1rem; display: none; }
             </style>
+                /* Jadwal Main Card & Grid */
+                .schedule-panel {
+                    background: #0f172a;
+                    border: 1px solid #1e293b;
+                    border-radius: 0.85rem;
+                    padding: 1rem;
+                    margin-bottom: 1.5rem;
+                }
+                .schedule-header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 0.75rem;
+                    flex-wrap: wrap;
+                    gap: 0.5rem;
+                }
+                .schedule-title {
+                    font-size: 0.95rem;
+                    font-weight: 700;
+                    color: #38bdf8;
+                    display: flex;
+                    align-items: center;
+                    gap: 0.4rem;
+                }
+                .schedule-baseline {
+                    font-size: 0.75rem;
+                    color: #94a3b8;
+                    background: #1e293b;
+                    padding: 0.2rem 0.5rem;
+                    border-radius: 0.35rem;
+                }
+                .schedule-grid {
+                    display: grid;
+                    grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
+                    gap: 0.5rem;
+                }
+                .schedule-day-card {
+                    background: #0b1120;
+                    border: 1px solid #1e293b;
+                    border-radius: 0.5rem;
+                    padding: 0.55rem 0.45rem;
+                    text-align: center;
+                    display: flex;
+                    flex-direction: column;
+                    gap: 0.25rem;
+                    transition: all 0.2s;
+                }
+                .schedule-day-card.today-card {
+                    border-color: #38bdf8;
+                    background: rgba(56, 189, 248, 0.08);
+                    box-shadow: 0 0 10px rgba(56, 189, 248, 0.15);
+                }
+                .day-name {
+                    font-size: 0.8rem;
+                    font-weight: 700;
+                    color: #e2e8f0;
+                }
+                .badge-today {
+                    display: inline-block;
+                    background: #0284c7;
+                    color: #ffffff;
+                    font-size: 0.65rem;
+                    font-weight: 700;
+                    padding: 0.1rem 0.35rem;
+                    border-radius: 0.25rem;
+                    margin-top: 0.15rem;
+                }
+                .badge-custom {
+                    display: inline-block;
+                    background: #1e293b;
+                    color: #a78bfa;
+                    border: 1px solid #7c3aed;
+                    font-size: 0.62rem;
+                    font-weight: 600;
+                    padding: 0.05rem 0.3rem;
+                    border-radius: 0.25rem;
+                    margin-top: 0.15rem;
+                }
+                .badge-std {
+                    display: inline-block;
+                    background: #1e293b;
+                    color: #64748b;
+                    font-size: 0.62rem;
+                    font-weight: 500;
+                    padding: 0.05rem 0.3rem;
+                    border-radius: 0.25rem;
+                    margin-top: 0.15rem;
+                }
+                .day-minutes {
+                    font-size: 0.85rem;
+                    font-weight: 700;
+                    color: #38bdf8;
+                    font-variant-numeric: tabular-nums;
+                }
+                .day-hours {
+                    font-size: 0.68rem;
+                    color: #64748b;
+                    font-family: ui-monospace, SFMono-Regular, monospace;
+                }
         </head>
         <body>
             <div class="card">
@@ -294,6 +442,7 @@ public static class RequestPage
                     <div class="timer-value" id="countdownTimer">--:--</div>
                     <div class="timer-curfew">Jadwal Jam Malam: <strong>{{curfew}}</strong></div>
                 </div>
+                {{scheduleSection}}
 
                 {{adminBanner}}
                 {{offlineAlert}}

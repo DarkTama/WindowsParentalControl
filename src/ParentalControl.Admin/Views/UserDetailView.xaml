@@ -188,23 +188,35 @@
 
                 <md:Card Padding="16" Margin="0,0,0,24" md:ElevationAssist.Elevation="Dp2">
                     <StackPanel>
-                        <TextBlock Text="Customize individual daily minutes and curfews for each day of the week (falls back to default limits if unconfigured)."
-                                   Opacity="0.7" Margin="0,0,0,12" />
+                        <TextBlock Text="Atur menit penggunaan dan jam malam khusus untuk hari tertentu. Hari yang tidak dicentang otomatis mengikuti Aturan Standar (User Limits di atas)."
+                                   Opacity="0.75" Margin="0,0,0,12" TextWrapping="Wrap" />
+
+                        <!-- Quick Presets -->
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12" VerticalAlignment="Center">
+                            <TextBlock Text="Preset Cepat:" VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,0,8,0" Opacity="0.85" />
+                            <Button Content="Hari Sekolah (Sen–Jum)" Command="{Binding ApplySchoolDaysPresetCommand}"
+                                    Style="{StaticResource MaterialDesignOutlinedButton}" Padding="10,2" Height="28" Margin="0,0,8,0" />
+                            <Button Content="Akhir Pekan (Sab–Min)" Command="{Binding ApplyWeekendPresetCommand}"
+                                    Style="{StaticResource MaterialDesignOutlinedButton}" Padding="10,2" Height="28" Margin="0,0,8,0" />
+                            <Button Content="Gunakan Default Semua" Command="{Binding ResetAllToDefaultCommand}"
+                                    Style="{StaticResource MaterialDesignPaperButton}" Padding="10,2" Height="28" />
+                        </StackPanel>
 
                         <DataGrid ItemsSource="{Binding WeeklySchedules}"
                                   AutoGenerateColumns="False"
                                   CanUserAddRows="False"
                                   CanUserDeleteRows="False"
-                                  Margin="0,0,0,12">
+                                  Margin="0,0,0,14">
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="Day of Week" Binding="{Binding DayName}" IsReadOnly="True" Width="140" FontWeight="Bold" />
-                                <DataGridTextColumn Header="Daily Minutes" Binding="{Binding DailyMinutes}" Width="140" />
-                                <DataGridTextColumn Header="Schedule Start (HH:mm)" Binding="{Binding ScheduleStart}" Width="180" />
-                                <DataGridTextColumn Header="Schedule End (HH:mm)" Binding="{Binding ScheduleEnd}" Width="180" />
+                                <DataGridCheckBoxColumn Header="Khusus?" Binding="{Binding IsCustom, UpdateSourceTrigger=PropertyChanged}" Width="75" />
+                                <DataGridTextColumn Header="Hari" Binding="{Binding DayName}" IsReadOnly="True" Width="140" FontWeight="Bold" />
+                                <DataGridTextColumn Header="Menit / Hari" Binding="{Binding DailyMinutes}" Width="110" />
+                                <DataGridTextColumn Header="Mulai (HH:mm)" Binding="{Binding ScheduleStart}" Width="130" />
+                                <DataGridTextColumn Header="Selesai (HH:mm)" Binding="{Binding ScheduleEnd}" Width="130" />
                             </DataGrid.Columns>
                         </DataGrid>
 
-                        <Button Content="Save 7-Day Schedule"
+                        <Button Content="Simpan Jadwal 7 Hari"
                                 Command="{Binding SaveWeeklyScheduleCommand}"
                                 Style="{StaticResource MaterialDesignRaisedButton}"
                                 HorizontalAlignment="Left"

@@ -3,6 +3,8 @@ using System.Diagnostics;
 using ParentalControl.Core.Data;
 using ParentalControl.Core.Models;
 using ParentalControl.Core.Security;
+using ParentalControl.Core;
+using ParentalControl.Core.Services;
 
 Console.WriteLine("=== Running ParentalControl Self-Checks ===");
 
@@ -212,6 +214,48 @@ if (testReq30.RequestedMinutes > 15) buttons30.Add(15);
 Debug.Assert(!buttons30.Contains(60), "30m request should not offer 60m");
 Debug.Assert(buttons30.Contains(30) && buttons30.Contains(15), "30m request should offer 30m and 15m");
 Console.WriteLine("✅ Telegram Dynamic Approval Buttons Calculation Passed.");
+
+// 14. Test Sparse Weekly Schedule Persistence and Fallback Deletion
+LimitRepository.Upsert(new LimitConfig
+{
+    UserId = user.Id,
+    DailyMinutes = 120,
+    ScheduleStart = new TimeOnly(8, 0),
+    ScheduleEnd = new TimeOnly(22, 0)
+});
+ScheduleRepository.SaveDaySchedule(new DaySchedule
+{
+    UserId = user.Id,
+    DayOfWeek = DayOfWeek.Monday,
+    DailyMinutes = 90,
+    ScheduleStart = new TimeOnly(15, 0),
+    ScheduleEnd = new TimeOnly(20, 0)
+});
+
+var monLimit = ScheduleRepository.GetEffectiveLimit(user.Id, DayOfWeek.Monday);
+Debug.Assert(monLimit != null && monLimit.DailyMinutes == 90, "Monday custom limit should be 90m");
+Debug.Assert(monLimit.ScheduleStart == new TimeOnly(15, 0), "Monday custom start should be 15:00");
+
+var tueLimit = ScheduleRepository.GetEffectiveLimit(user.Id, DayOfWeek.Tuesday);
+Debug.Assert(tueLimit != null && tueLimit.DailyMinutes == 120, "Tuesday should fall back to baseline 120m");
+
+// Delete custom schedule for Monday -> should fall back to baseline
+ScheduleRepository.DeleteDaySchedule(user.Id, DayOfWeek.Monday);
+var monLimitAfterDelete = ScheduleRepository.GetEffectiveLimit(user.Id, DayOfWeek.Monday);
+Debug.Assert(monLimitAfterDelete != null && monLimitAfterDelete.DailyMinutes == 120, "Monday should fall back to 120m baseline after deletion");
+Console.WriteLine("✅ Sparse Weekly Schedule & Baseline Fallback Verification Passed.");
+
+// 15. Test AppVersion & UpdateService SemVer Logic
+Debug.Assert(AppVersion.Current == "1.1.0", "Current version should be 1.1.0");
+Debug.Assert(AppVersion.DisplayName == "v1.1.0", "Display name should be v1.1.0");
+Debug.Assert(AppVersion.GitHubRepo == "DarkTama/WindowsParentalControl", "GitHub repo match");
+
+Debug.Assert(UpdateService.IsNewerVersion("1.2.0", "1.1.0") == true, "1.2.0 is newer than 1.1.0");
+Debug.Assert(UpdateService.IsNewerVersion("2.0.0", "1.1.0") == true, "2.0.0 is newer than 1.1.0");
+Debug.Assert(UpdateService.IsNewerVersion("1.1.1", "1.1.0") == true, "1.1.1 is newer than 1.1.0");
+Debug.Assert(UpdateService.IsNewerVersion("1.1.0", "1.1.0") == false, "1.1.0 is not newer than 1.1.0");
+Debug.Assert(UpdateService.IsNewerVersion("1.0.9", "1.1.0") == false, "1.0.9 is not newer than 1.1.0");
+Console.WriteLine("✅ AppVersion & UpdateService SemVer Comparison Verification Passed.");
 
 // Cleanup test user
 UserRepository.DeleteBySid(testSid);

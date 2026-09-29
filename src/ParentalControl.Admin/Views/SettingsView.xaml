@@ -263,6 +263,46 @@
                     </StackPanel>
                 </md:Card>
 
+                <!-- ═══ Software Updates ═══ -->
+                <md:ColorZone Mode="PrimaryMid" Padding="10,8" CornerRadius="4" Margin="0,0,0,8">
+                    <TextBlock Text="🚀 Software Updates &amp; Version"
+                               FontSize="14" FontWeight="DemiBold"
+                               Foreground="{DynamicResource MaterialDesign.Brush.Primary.Foreground}"
+                               VerticalAlignment="Center" />
+                </md:ColorZone>
+
+                <md:Card Padding="20" Margin="0,0,0,24" md:ElevationAssist.Elevation="Dp2">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12" VerticalAlignment="Center">
+                            <TextBlock Text="Current Version:" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding CurrentVersion}" FontSize="14" FontWeight="Bold" Foreground="#0284c7" Margin="6,0,16,0" VerticalAlignment="Center" />
+                            <Button Content="Check for Updates"
+                                    Command="{Binding CheckForUpdatesCommand}"
+                                    Style="{StaticResource MaterialDesignOutlinedButton}" />
+                        </StackPanel>
+
+                        <ProgressBar IsIndeterminate="True" Height="4" Margin="0,4,0,8"
+                                     Visibility="{Binding IsCheckingUpdate, Converter={StaticResource BooleanToVisibilityConverter}}" />
+
+                        <TextBlock Text="{Binding UpdateStatus}" FontWeight="Medium" Margin="0,4,0,4" TextWrapping="Wrap" />
+
+                        <Border Background="#F0FDF4" BorderBrush="#86EFAC" BorderThickness="1" CornerRadius="8" Padding="12" Margin="0,8,0,0"
+                                Visibility="{Binding HasUpdate, Converter={StaticResource BooleanToVisibilityConverter}}">
+                            <StackPanel>
+                                <TextBlock Text="{Binding ReleaseTitle}" FontWeight="Bold" FontSize="14" Foreground="#15803D" Margin="0,0,0,4" />
+                                <TextBlock Text="{Binding ReleaseNotes}" TextWrapping="Wrap" Opacity="0.85" FontSize="12" Margin="0,0,0,12" />
+                                <Button Content="Download &amp; Install Update"
+                                        Command="{Binding ApplyUpdateCommand}"
+                                        Style="{StaticResource MaterialDesignRaisedButton}"
+                                        HorizontalAlignment="Left"
+                                        Background="#16A34A" BorderBrush="#16A34A" />
+                                <ProgressBar IsIndeterminate="True" Height="4" Margin="0,8,0,0"
+                                             Visibility="{Binding IsInstallingUpdate, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </md:Card>
+
                 <!-- ═══ Save Button ═══ -->
                 <Button Content="Save All Settings"
                         Command="{Binding SaveSettingsCommand}"
