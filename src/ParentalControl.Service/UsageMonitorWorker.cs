@@ -12,7 +12,8 @@ public sealed class UsageMonitorWorker : BackgroundService
     private static readonly TimeSpan TickInterval = TimeSpan.FromSeconds(60);
     private DateOnly _lastCleanupDate = DateOnly.MinValue;
     private readonly ConcurrentDictionary<int, HashSet<int>> _sentAlerts = new();
-
+    private long _lastMonotonicTick = Environment.TickCount64;
+    private DateTime _lastWallTime = DateTime.UtcNow;
     public UsageMonitorWorker(SessionTracker sessionTracker, Serilog.ILogger logger)
     {
         _sessionTracker = sessionTracker;
@@ -54,12 +55,54 @@ public sealed class UsageMonitorWorker : BackgroundService
 
     private void ProcessTick()
     {
+        // Monotonic Clock Watchdog
+        var currentMonotonic = Environment.TickCount64;
+        var currentWall = DateTime.UtcNow;
+        var monotonicDeltaSec = (currentMonotonic - _lastMonotonicTick) / 1000.0;
+        var wallDeltaSec = (currentWall - _lastWallTime).TotalSeconds;
+
+        _lastMonotonicTick = currentMonotonic;
+        _lastWallTime = currentWall;
+
+        if (monotonicDeltaSec > 0 && Math.Abs(wallDeltaSec - monotonicDeltaSec) > 60)
+        {
+            _logger.Warning("Clock tampering detected: wall clock drifted {Drift:F1}s vs monotonic uptime",
+                wallDeltaSec - monotonicDeltaSec);
+            EventRepository.LogEvent("SYSTEM", EventType.CLOCK_TAMPER,
+                $"Wall clock drifted {wallDeltaSec - monotonicDeltaSec:F0}s (wall: {wallDeltaSec:F0}s, mono: {monotonicDeltaSec:F0}s)");
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var botToken = SettingsRepository.Get(SettingsRepository.KeyTelegramBotToken);
+                    var chatId = SettingsRepository.Get(SettingsRepository.KeyTelegramChatId);
+                    if (!string.IsNullOrWhiteSpace(botToken) && !string.IsNullOrWhiteSpace(chatId))
+                    {
+                        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+                        var payload = new
+                        {
+                            chat_id = chatId,
+                            text = $"⚠️ *PERINGATAN KEAMANAN: Jam Sistem Dimanipulasi*\n"
+                                 + $"Komputer: `{Environment.MachineName}`\n"
+                                 + $"Pergeseran Waktu: {wallDeltaSec - monotonicDeltaSec:F0} detik.\n"
+                                 + $"Pengawasan kuota dan jam malam tetap aktif.",
+                            parse_mode = "Markdown"
+                        };
+                        var json = System.Text.Json.JsonSerializer.Serialize(payload);
+                        using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+                        await http.PostAsync($"https://api.telegram.org/bot{botToken}/sendMessage", content);
+                    }
+                }
+                catch { }
+            });
+        }
+
         _sessionTracker.TickAllSessions();
 
         var today = DateOnly.FromDateTime(DateTime.Now);
         var now = TimeOnly.FromDateTime(DateTime.Now);
         var dayOfWeek = DateTime.Now.DayOfWeek;
-
         var alertSetting = SettingsRepository.Get(SettingsRepository.KeyAlertIntervals, "15,5,1");
         var thresholds = alertSetting.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(s => int.TryParse(s, out var v) ? v : 0)
@@ -85,7 +128,7 @@ public sealed class UsageMonitorWorker : BackgroundService
             if (user is null || !user.IsRestricted) continue;
             _sessionTracker.EnsureAgentRunning(sessionId);
 
-            var limit = ScheduleRepository.GetEffectiveLimit(user.Id, dayOfWeek);
+            var limit = ScheduleRepository.GetEffectiveLimit(user.Id, dayOfWeek, today);
             if (limit is null) continue;
 
             var usage = UsageRepository.GetUsage(user.Id, today);
@@ -110,9 +153,9 @@ public sealed class UsageMonitorWorker : BackgroundService
                     session.Username, used, limit.DailyMinutes, usage?.BonusMinutes ?? 0);
                 EventRepository.LogEvent(session.UserSid, EventType.LIMIT_REACHED,
                     $"Used {used} of {totalAllowed} minutes (base: {limit.DailyMinutes}, bonus: {usage?.BonusMinutes ?? 0})");
-                NotificationManager.SendMessage(sessionId, "Parental Control", SettingsRepository.GetMessage(SettingsRepository.KeyMsgLimitReached), isWarning: true, timeoutSeconds: 5);
-                SessionManager.ForceLogoff(sessionId);
-                EventRepository.LogEvent(session.UserSid, EventType.FORCED_LOGOUT, "Daily limit reached");
+                NotificationManager.SendMessage(sessionId, "Parental Control", SettingsRepository.GetMessage(SettingsRepository.KeyMsgLimitReached), isWarning: true, timeoutSeconds: 7, wait: true);
+                SessionManager.LockSession(sessionId);
+                EventRepository.LogEvent(session.UserSid, EventType.SESSION_LOCKED, "Daily limit reached - workstation locked");
                 _sessionTracker.RemoveSession(sessionId);
                 _sentAlerts.TryRemove(sessionId, out _);
                 continue;
@@ -122,9 +165,9 @@ public sealed class UsageMonitorWorker : BackgroundService
             {
                 _logger.Information("Outside allowed schedule for {Username} (allowed {Start}-{End})",
                     session.Username, limit.ScheduleStart, limit.ScheduleEnd);
-                NotificationManager.SendMessage(sessionId, "Parental Control", SettingsRepository.GetMessage(SettingsRepository.KeyMsgCurfewReached), isWarning: true, timeoutSeconds: 5);
-                SessionManager.ForceLogoff(sessionId);
-                EventRepository.LogEvent(session.UserSid, EventType.FORCED_LOGOUT, "Outside allowed schedule");
+                NotificationManager.SendMessage(sessionId, "Parental Control", SettingsRepository.GetMessage(SettingsRepository.KeyMsgCurfewReached), isWarning: true, timeoutSeconds: 7, wait: true);
+                SessionManager.LockSession(sessionId);
+                EventRepository.LogEvent(session.UserSid, EventType.SESSION_LOCKED, "Outside allowed schedule - workstation locked");
                 _sessionTracker.RemoveSession(sessionId);
                 _sentAlerts.TryRemove(sessionId, out _);
                 continue;
@@ -170,6 +213,7 @@ public sealed class UsageMonitorWorker : BackgroundService
         var usageDeleted = UsageRepository.DeleteOlderThan(usageCutoff);
         var appUsageDeleted = AppUsageRepository.DeleteOlderThan(usageCutoff);
         var capturesDeleted = ScreenCaptureRepository.PruneOldCaptures(DatabaseManager.CapturesRetentionDays, DatabaseManager.MaxCapturesStorageBytes);
+        var exceptionsDeleted = ScheduleExceptionRepository.DeleteOlderThan(today);
         if (eventsDeleted > 0 || usageDeleted > 0 || appUsageDeleted > 0)
         {
             _logger.Information("Database cleanup: deleted {EventsDeleted} events, {UsageDeleted} usage records, {AppUsageDeleted} app records, {CapturesDeleted} captures",

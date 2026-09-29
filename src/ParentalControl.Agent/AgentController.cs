@@ -13,7 +13,11 @@ public sealed record AgentStatusResponse(
     string? curfew,
     bool isLocked,
     bool captureRequested = false,
-    int watchIntervalSeconds = 0);
+    int watchIntervalSeconds = 0,
+    bool isCurfewClamped = false,
+    int? lastDeclinedId = null,
+    string? lastDeclinedReason = null,
+    DateTime? lastDeclinedTime = null);
 
 public sealed class AgentController : IDisposable
 {
@@ -26,6 +30,7 @@ public sealed class AgentController : IDisposable
     private DispatcherTimer? _watchTimer;
     private int _currentWatchInterval;
     private bool _disposed;
+    private int? _lastShownDeclinedId;
 
     public AgentController(System.Windows.Application app)
     {
@@ -84,6 +89,11 @@ public sealed class AgentController : IDisposable
             }
         });
         menu.Items.Add(toggleWidgetItem);
+        var settingsItem = new System.Windows.Forms.ToolStripMenuItem("⚙️ Pengaturan Layar Penuh", null, (s, e) =>
+        {
+            _widgetWindow.Dispatcher.Invoke(() => _widgetWindow.OpenSettings());
+        });
+        menu.Items.Add(settingsItem);
 
         var requestItem = new System.Windows.Forms.ToolStripMenuItem("🎮 Minta Tambahan Waktu Layar...", null, (s, e) =>
         {
@@ -129,7 +139,16 @@ public sealed class AgentController : IDisposable
                 status.remainingSeconds,
                 status.curfew ?? "Jam malam: --:--",
                 status.isLocked,
-                status.username ?? Environment.UserName);
+                status.username ?? Environment.UserName,
+                status.isCurfewClamped);
+
+            if (status.lastDeclinedId != null && status.lastDeclinedId != _lastShownDeclinedId)
+            {
+                _lastShownDeclinedId = status.lastDeclinedId;
+                _widgetWindow.ShowDeclineToast(
+                    status.lastDeclinedReason ?? "Permintaan ditolak oleh orang tua.",
+                    status.lastDeclinedTime ?? DateTime.Now);
+            }
 
             // Update NotifyIcon tooltip
             string tooltip;

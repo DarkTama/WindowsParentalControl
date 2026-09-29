@@ -223,6 +223,85 @@
                                 Padding="24,8" />
                     </StackPanel>
                 </md:Card>
+                <!-- ═══ Schedule Exceptions (Pengecualian Khusus) ═══ -->
+                <md:ColorZone Mode="PrimaryMid" Padding="8,6" CornerRadius="4" Margin="0,0,0,8">
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right"
+                                Style="{StaticResource MaterialDesignIconForegroundButton}"
+                                Command="{Binding LoadUpcomingExceptionsCommand}"
+                                ToolTip="Refresh exceptions" Width="28" Height="28">
+                            <md:PackIcon Kind="Refresh" Width="18" Height="18" />
+                        </Button>
+                        <TextBlock Text="Pengecualian Jadwal Khusus (Schedule Exceptions)"
+                                   FontSize="14" FontWeight="DemiBold"
+                                   Foreground="{DynamicResource MaterialDesign.Brush.Primary.Foreground}"
+                                   VerticalAlignment="Center" />
+                    </DockPanel>
+                </md:ColorZone>
+
+                <md:Card Padding="16" Margin="0,0,0,24" md:ElevationAssist.Elevation="Dp2">
+                    <StackPanel>
+                        <TextBlock Text="Pengecualian khusus untuk tanggal tertentu (misalnya hari libur atau acara keluarga). Mengesampingkan jadwal mingguan dan batas standar hanya pada tanggal yang ditentukan."
+                                   Opacity="0.75" Margin="0,0,0,12" TextWrapping="Wrap" />
+
+                        <!-- Add Exception Controls -->
+                        <Grid Margin="0,0,0,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="130" />
+                                <ColumnDefinition Width="10" />
+                                <ColumnDefinition Width="100" />
+                                <ColumnDefinition Width="10" />
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="10" />
+                                <ColumnDefinition Width="110" />
+                                <ColumnDefinition Width="10" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <DatePicker Grid.Column="0" SelectedDate="{Binding NewExceptionDate}"
+                                        md:HintAssist.Hint="Tanggal" Style="{StaticResource MaterialDesignFloatingHintDatePicker}" />
+
+                            <TextBox Grid.Column="2" Text="{Binding NewExceptionMinutes}"
+                                     md:HintAssist.Hint="Menit" Style="{StaticResource MaterialDesignFloatingHintTextBox}" />
+
+                            <TextBox Grid.Column="4" Text="{Binding NewExceptionStart}"
+                                     md:HintAssist.Hint="Mulai (HH:mm)" Style="{StaticResource MaterialDesignFloatingHintTextBox}" />
+
+                            <TextBox Grid.Column="6" Text="{Binding NewExceptionEnd}"
+                                     md:HintAssist.Hint="Selesai (HH:mm)" Style="{StaticResource MaterialDesignFloatingHintTextBox}" />
+
+                            <Button Grid.Column="8" Content="Tambah Pengecualian"
+                                    Command="{Binding AddExceptionCommand}"
+                                    Style="{StaticResource MaterialDesignRaisedButton}"
+                                    VerticalAlignment="Bottom" Height="36" />
+                        </Grid>
+
+                        <DataGrid ItemsSource="{Binding UpcomingExceptions}"
+                                  AutoGenerateColumns="False"
+                                  IsReadOnly="True"
+                                  CanUserAddRows="False"
+                                  CanUserDeleteRows="False"
+                                  Margin="0,0,0,8">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Tanggal" Binding="{Binding ExceptionDate, StringFormat='{}{0:yyyy-MM-dd}'}" Width="120" FontWeight="Bold" />
+                                <DataGridTextColumn Header="Menit Kuota" Binding="{Binding DailyMinutes}" Width="110" />
+                                <DataGridTextColumn Header="Jam Mulai" Binding="{Binding ScheduleStart, StringFormat='{}{0:HH:mm}'}" Width="110" />
+                                <DataGridTextColumn Header="Jam Selesai" Binding="{Binding ScheduleEnd, StringFormat='{}{0:HH:mm}'}" Width="110" />
+                                <DataGridTemplateColumn Header="Aksi" Width="100">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Button Content="Hapus"
+                                                    Command="{Binding DataContext.DeleteExceptionCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                    CommandParameter="{Binding}"
+                                                    Style="{StaticResource MaterialDesignOutlinedButton}"
+                                                    Padding="8,2" Height="26" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </StackPanel>
+                </md:Card>
 
                 <!-- ═══ Today's App & Game Activity ═══ -->
                 <md:ColorZone Mode="PrimaryMid" Padding="8,6" CornerRadius="4" Margin="0,0,0,8">

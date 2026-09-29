@@ -24,12 +24,16 @@ public static class UpdateService
         Timeout = TimeSpan.FromSeconds(20)
     };
 
+    private static readonly HttpClient DownloadHttpClient = new()
+    {
+        Timeout = TimeSpan.FromMinutes(10)
+    };
     static UpdateService()
     {
         HttpClient.DefaultRequestHeaders.Add("User-Agent", "WindowsParentalControl-Updater");
         HttpClient.DefaultRequestHeaders.Add("Accept", "application/vnd.github.v3+json");
+        DownloadHttpClient.DefaultRequestHeaders.Add("User-Agent", "WindowsParentalControl-Updater");
     }
-
     public static async Task<UpdateCheckResult> CheckForUpdatesAsync(CancellationToken cancellationToken = default)
     {
         var currentVerStr = AppVersion.Current;
@@ -135,7 +139,7 @@ public static class UpdateService
 
             _logger.Information("Downloading update installer from {Url} to {Path}", downloadUrl, installerPath);
 
-            using (var response = await HttpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken))
+            using (var response = await DownloadHttpClient.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead, cancellationToken))
             {
                 response.EnsureSuccessStatusCode();
                 var totalBytes = response.Content.Headers.ContentLength ?? -1L;

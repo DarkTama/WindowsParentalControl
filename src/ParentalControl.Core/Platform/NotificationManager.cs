@@ -3,7 +3,7 @@ namespace ParentalControl.Core.Platform;
 
 public static class NotificationManager
 {
-    public static bool SendMessage(int sessionId, string title, string message, bool isWarning = false, int timeoutSeconds = 20)
+    public static bool SendMessage(int sessionId, string title, string message, bool isWarning = false, int timeoutSeconds = 20, bool wait = false)
     {
         try
         {
@@ -24,7 +24,7 @@ public static class NotificationManager
                 style,
                 timeoutSeconds,
                 out _,
-                false);
+                wait);
         }
         catch
         {

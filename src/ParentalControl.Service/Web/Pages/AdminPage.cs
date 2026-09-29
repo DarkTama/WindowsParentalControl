@@ -1,3 +1,5 @@
+using ParentalControl.Core;
+
 namespace ParentalControl.Service.Web.Pages;
 
 public static class AdminPage
@@ -57,11 +59,11 @@ public static class AdminPage
             <title>Parental Control — Web Admin</title>
             <style>
                 * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Inter", sans-serif; }
-                body { background: #0b1120; color: #f8fafc; padding: 1.5rem; min-height: 100vh; }
+                body { background: #0b1120; color: #f8fafc; padding: 1.5rem; min-height: 100vh; overflow-x: hidden; }
                 header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; border-bottom: 1px solid #1e293b; padding-bottom: 1rem; flex-wrap: wrap; gap: 1rem; }
-                h1 { font-size: 1.4rem; color: #38bdf8; display: flex; align-items: center; gap: 0.5rem; }
-                .actions { display: flex; gap: 0.75rem; }
-                .btn { padding: 0.45rem 0.9rem; border-radius: 0.375rem; border: none; cursor: pointer; font-size: 0.85rem; font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 0.375rem; transition: all 0.2s; }
+                h1 { font-size: 1.35rem; color: #38bdf8; display: flex; align-items: center; gap: 0.5rem; }
+                .actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+                .btn { padding: 0.45rem 0.85rem; border-radius: 0.375rem; border: none; cursor: pointer; font-size: 0.825rem; font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; gap: 0.35rem; transition: all 0.2s; white-space: nowrap; }
                 .btn-primary { background: #0284c7; color: white; }
                 .btn-primary:hover { background: #0369a1; }
                 .btn-danger { background: #dc2626; color: white; }
@@ -73,13 +75,16 @@ public static class AdminPage
                 .btn-secondary { background: #334155; color: #e2e8f0; }
                 .btn-secondary:hover { background: #475569; }
 
-                .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
-                .card { background: #131c2e; border: 1px solid #1e293b; border-radius: 0.85rem; padding: 1.5rem; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5); }
-                .card h2 { font-size: 1.15rem; color: #94a3b8; margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between; }
+                .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
+                .card { background: #131c2e; border: 1px solid #1e293b; border-radius: 0.85rem; padding: 1.5rem; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5); overflow: hidden; max-width: 100%; }
+                .card h2 { font-size: 1.15rem; color: #94a3b8; margin-bottom: 1rem; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem; }
 
-                table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
-                th { text-align: left; padding: 0.65rem 0.75rem; background: #0f172a; color: #94a3b8; font-weight: 600; }
-                td { padding: 0.75rem; border-bottom: 1px solid #1e293b; }
+                .table-responsive { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; margin-bottom: 0.5rem; }
+                .table-responsive::-webkit-scrollbar { height: 6px; }
+                .table-responsive::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+                table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+                th { text-align: left; padding: 0.65rem 0.75rem; background: #0f172a; color: #94a3b8; font-weight: 600; white-space: nowrap; }
+                td { padding: 0.65rem 0.75rem; border-bottom: 1px solid #1e293b; vertical-align: middle; }
                 tr:last-child td { border-bottom: none; }
 
                 .badge { padding: 0.2rem 0.5rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 600; display: inline-flex; align-items: center; gap: 0.25rem; }
@@ -119,16 +124,39 @@ public static class AdminPage
                 .cap-thumb { width: 96px; height: 54px; object-fit: cover; border-radius: 4px; border: 2px solid #334155; cursor: pointer; transition: all 0.2s; flex-shrink: 0; opacity: 0.75; }
                 .cap-thumb:hover, .cap-thumb.active { border-color: #38bdf8; opacity: 1; transform: scale(1.03); }
                 /* Modal styles */
-                .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); z-index: 999; align-items: center; justify-content: center; }
-                .modal-box { background: #131c2e; border: 1px solid #334155; border-radius: 0.85rem; padding: 1.75rem; max-width: 420px; width: 90%; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.8); }
+                .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(4px); z-index: 999; align-items: center; justify-content: center; padding: 0.75rem; }
+                .modal-box { background: #131c2e; border: 1px solid #334155; border-radius: 0.85rem; padding: 1.5rem; max-width: 580px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.8); }
+
+                /* Mobile Responsiveness */
+                @media (max-width: 768px) {
+                    body { padding: 0.75rem 0.5rem; }
+                    header { margin-bottom: 1.25rem; flex-direction: column; align-items: stretch; gap: 0.75rem; padding-bottom: 0.75rem; }
+                    .header-brand { display: flex; align-items: center; justify-content: space-between; width: 100%; flex-wrap: wrap; gap: 0.5rem; }
+                    h1 { font-size: 1.15rem; }
+                    .actions { width: 100%; display: flex; gap: 0.35rem; }
+                    .actions .btn { flex: 1; text-align: center; justify-content: center; font-size: 0.75rem; padding: 0.45rem 0.25rem; }
+                    .grid { grid-template-columns: 1fr; gap: 1rem; margin-bottom: 1rem; }
+                    .card { padding: 1rem 0.75rem; border-radius: 0.75rem; margin-bottom: 1rem !important; }
+                    .card h2 { font-size: 1rem; }
+                    .timeline-card { padding: 0.65rem 0.4rem; }
+                    .timeline-grid { gap: 1.5px; height: 48px; padding: 4px 2px 2px; }
+                    .timeline-labels { gap: 1.5px; font-size: 0.55rem; }
+                    .modal-box { padding: 1.25rem 0.85rem; width: 100%; max-height: 88vh; }
+                    .btn { font-size: 0.78rem; padding: 0.4rem 0.65rem; }
+                    .card-header-flex { flex-direction: column; align-items: stretch !important; gap: 0.6rem !important; }
+                    .btn-group-responsive { width: 100%; display: flex; gap: 0.35rem; }
+                    .btn-group-responsive .btn { flex: 1; text-align: center; justify-content: center; font-size: 0.72rem; padding: 0.4rem 0.2rem; }
+                }
             </style>
         </head>
         <body>
             <header>
-                <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap">
+                <div class="header-brand">
                     <h1 style="margin:0">🛡️ Parental Control Remote Admin</h1>
-                    <span class="badge" style="background:#1e293b;color:#94a3b8" id="versionBadge">v1.1.0</span>
-                    <button id="btnUpdateNotice" class="badge" style="display:none;background:#15803d;color:#dcfce7;border:none;cursor:pointer;padding:0.25rem 0.6rem;font-weight:600" onclick="checkAppUpdates()">🚀 Update Available!</button>
+                    <div style="display:flex;align-items:center;gap:0.5rem">
+                        <span class="badge" style="background:#1e293b;color:#94a3b8" id="versionBadge">v1.2.1</span>
+                        <button id="btnUpdateNotice" class="badge" style="display:none;background:#15803d;color:#dcfce7;border:none;cursor:pointer;padding:0.25rem 0.6rem;font-weight:600" onclick="checkAppUpdates()">🚀 Update Available!</button>
+                    </div>
                 </div>
                 <div class="actions">
                     <button class="btn btn-secondary" onclick="checkAppUpdates()">🚀 Check Update</button>
@@ -164,12 +192,12 @@ public static class AdminPage
 
             <!-- ═══ LIVE SCREEN SUPERVISION CARD ═══ -->
             <div class="card" style="margin-bottom: 2rem;">
-                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;margin-bottom:1rem">
-                    <div style="display:flex;align-items:center;gap:0.75rem">
-                        <h2>📸 Live Desktop Screen Supervision</h2>
+                <div class="card-header-flex" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;margin-bottom:1rem">
+                    <div style="display:flex;align-items:center;gap:0.75rem;flex-wrap:wrap">
+                        <h2 style="margin:0">📸 Live Desktop Screen Supervision</h2>
                         <span id="watchBadge" class="badge" style="display:none;background:#15803d;color:#dcfce7;animation:pulse 2s infinite">● Watch Mode Active (10s)</span>
                     </div>
-                    <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+                    <div class="btn-group-responsive" style="display:flex;gap:0.5rem;flex-wrap:wrap">
                         <button class="btn btn-primary" id="btnSnapScreen" onclick="captureCurrentScreen()">📸 Capture Now</button>
                         <button class="btn btn-secondary" id="btnToggleWatch" onclick="toggleWatchMode()">🎥 Watch Mode (10s)</button>
                         <button class="btn btn-secondary" id="btnSendTelegram" onclick="sendCurrentCaptureToTelegram()">📱 Send to Telegram</button>
@@ -330,8 +358,9 @@ public static class AdminPage
                     </div>
 
                     <!-- 7-Day Matrix Table -->
-                    <div style="border:1px solid #1e293b;border-radius:0.5rem;overflow:hidden;margin-bottom:1.25rem">
-                        <table style="width:100%;font-size:0.8rem">
+                    <!-- 7-Day Matrix Table -->
+                    <div class="table-responsive" style="border:1px solid #1e293b;border-radius:0.5rem;margin-bottom:1.25rem">
+                        <table style="width:100%;font-size:0.8rem;min-width:440px">
                             <thead>
                                 <tr style="background:#090d16">
                                     <th style="padding:0.5rem;text-align:left">Day</th>
@@ -343,6 +372,36 @@ public static class AdminPage
                             <tbody id="schDaysTableBody">
                             </tbody>
                         </table>
+                    </div>
+                    <!-- Single-Day Schedule Exceptions Section -->
+                    <div style="border-top:1px solid #1e293b;padding-top:1rem;margin-top:1rem;margin-bottom:1.25rem">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem">
+                            <span style="font-size:0.9rem;font-weight:700;color:#f472b6">📅 Upcoming Schedule Exceptions (Pengecualian Khusus)</span>
+                        </div>
+                        <div class="table-responsive" style="border:1px solid #1e293b;border-radius:0.5rem;margin-bottom:0.75rem">
+                            <table style="width:100%;font-size:0.8rem;min-width:380px">
+                                <thead>
+                                    <tr style="background:#090d16">
+                                        <th style="padding:0.4rem;text-align:left">Date</th>
+                                        <th style="padding:0.4rem;text-align:left">Minutes</th>
+                                        <th style="padding:0.4rem;text-align:left">Curfew Window</th>
+                                        <th style="padding:0.4rem;text-align:center">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="schExceptionsTableBody">
+                                    <tr><td colspan="4" style="text-align:center;padding:0.5rem;color:#64748b">No upcoming exceptions</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Add Exception Form -->
+                        <div style="display:flex;gap:0.4rem;flex-wrap:wrap;align-items:center;background:#090d16;padding:0.5rem;border-radius:0.4rem;border:1px solid #1e293b">
+                            <input type="date" id="newExcDate" style="background:#131c2e;border:1px solid #334155;color:#fff;padding:0.25rem 0.4rem;border-radius:0.3rem;font-size:0.75rem" />
+                            <input type="number" id="newExcMinutes" placeholder="Minutes" value="120" style="width:70px;background:#131c2e;border:1px solid #334155;color:#fff;padding:0.25rem 0.4rem;border-radius:0.3rem;font-size:0.75rem" />
+                            <input type="time" id="newExcStart" value="08:00" style="background:#131c2e;border:1px solid #334155;color:#fff;padding:0.25rem 0.4rem;border-radius:0.3rem;font-size:0.75rem" />
+                            <input type="time" id="newExcEnd" value="22:00" style="background:#131c2e;border:1px solid #334155;color:#fff;padding:0.25rem 0.4rem;border-radius:0.3rem;font-size:0.75rem" />
+                            <button type="button" class="btn btn-secondary" style="font-size:0.75rem;padding:0.25rem 0.6rem" onclick="addScheduleException()">➕ Add Exception</button>
+                        </div>
                     </div>
 
                     <div id="schFeedback" style="display:none;padding:0.5rem;border-radius:0.4rem;font-size:0.8rem;margin-bottom:0.75rem"></div>
@@ -429,7 +488,7 @@ public static class AdminPage
                         return;
                     }
                     activeSessionUsernames = sessions.filter(s => s.isRestricted && !s.isLocked).map(s => s.username);
-                    let html = '<table><thead><tr><th>User</th><th>Current Activity</th><th>Remaining</th><th>Curfew</th><th>Quick Actions</th></tr></thead><tbody>';
+                    let html = '<div class="table-responsive"><table><thead><tr><th style="min-width:110px">User</th><th style="min-width:160px">Current Activity</th><th style="min-width:90px">Remaining</th><th style="min-width:90px">Curfew</th><th style="min-width:180px">Quick Actions</th></tr></thead><tbody>';
                     for (const s of sessions) {
                         const liveIndicator = s.isAppLive
                             ? `<span class="live-dot" title="Active foreground app"></span>`
@@ -475,7 +534,7 @@ public static class AdminPage
                             </tr>`;
                         }
                     }
-                    html += '</tbody></table>';
+                    html += '</tbody></table></div>';
                     c.innerHTML = html;
                 }
 
@@ -485,7 +544,7 @@ public static class AdminPage
                         c.innerHTML = '<div class="empty">No requests submitted today.</div>';
                         return;
                     }
-                    let html = '<table><thead><tr><th>User</th><th>Req</th><th>Reason</th><th>Action</th></tr></thead><tbody>';
+                    let html = '<div class="table-responsive"><table><thead><tr><th style="min-width:100px">User</th><th style="min-width:60px">Req</th><th>Reason</th><th style="min-width:140px">Action</th></tr></thead><tbody>';
                     for (const r of requests) {
                         const isPending = r.status === 'PENDING';
                         let actionHtml = `<span class="badge badge-${r.status.toLowerCase()}">${r.status}</span>`;
@@ -503,7 +562,7 @@ public static class AdminPage
                             <td>${actionHtml}</td>
                         </tr>`;
                     }
-                    html += '</tbody></table>';
+                    html += '</tbody></table></div>';
                     c.innerHTML = html;
                 }
 
@@ -615,7 +674,7 @@ public static class AdminPage
                     stackedSummary.textContent = `${apps.length} applications logged`;
 
                     // Render Ranked Apps Table
-                    let html = '<table><thead><tr><th>User</th><th>Process / Game</th><th>Window Title Summary</th><th>Share</th><th>Duration</th></tr></thead><tbody>';
+                    let html = '<div class="table-responsive"><table><thead><tr><th style="min-width:90px">User</th><th style="min-width:140px">Process / Game</th><th style="min-width:180px">Window Title Summary</th><th style="min-width:110px">Share</th><th style="min-width:80px">Duration</th></tr></thead><tbody>';
                     for (let i = 0; i < apps.length; i++) {
                         const a = apps[i];
                         const color = COLOR_PALETTE[i % COLOR_PALETTE.length];
@@ -637,7 +696,7 @@ public static class AdminPage
                             <td><strong>${formatMinutes(a.minutes)}</strong></td>
                         </tr>`;
                     }
-                    html += '</tbody></table>';
+                    html += '</tbody></table></div>';
                     c.innerHTML = html;
                 }
 
@@ -899,7 +958,7 @@ public static class AdminPage
                         c.innerHTML = '<div class="empty">No restricted child accounts registered yet.</div>';
                         return;
                     }
-                    let html = '<table><thead><tr><th>User</th><th>Standard Daily Quota</th><th>Standard Curfew</th><th>Custom Schedule Overrides</th><th>Action</th></tr></thead><tbody>';
+                    let html = '<div class="table-responsive"><table><thead><tr><th style="min-width:100px">User</th><th style="min-width:110px">Standard Daily Quota</th><th style="min-width:110px">Standard Curfew</th><th style="min-width:130px">Custom Schedule Overrides</th><th style="min-width:130px">Action</th></tr></thead><tbody>';
                     for (const u of users) {
                         const customBadge = u.customCount > 0
                             ? `<span class="badge" style="background:#4c1d95;color:#ddd6fe">${u.customCount} custom days</span>`
@@ -914,11 +973,12 @@ public static class AdminPage
                             </td>
                         </tr>`;
                     }
-                    html += '</tbody></table>';
+                    html += '</tbody></table></div>';
                     c.innerHTML = html;
                 }
 
                 let currentSchDays = [];
+                let currentSchExceptions = [];
 
                 async function openScheduleModal(userId, username) {
                     document.getElementById('schModalUserId').value = userId;
@@ -935,7 +995,12 @@ public static class AdminPage
                         document.getElementById('baseEnd').value = data.baseScheduleEnd;
 
                         currentSchDays = data.days;
+                        currentSchExceptions = data.upcomingExceptions || [];
                         renderScheduleDaysTable();
+                        renderScheduleExceptionsTable();
+                        const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+                        const dateInput = document.getElementById('newExcDate');
+                        if (dateInput && !dateInput.value) dateInput.value = tomorrow;
                         document.getElementById('scheduleModal').style.display = 'flex';
                     } catch (e) {
                         console.error('Error opening schedule modal:', e);
@@ -980,6 +1045,66 @@ public static class AdminPage
                         currentSchDays[index].scheduleEnd = document.getElementById('baseEnd').value || '22:00';
                     }
                     renderScheduleDaysTable();
+                }
+                function renderScheduleExceptionsTable() {
+                    const tbody = document.getElementById('schExceptionsTableBody');
+                    if (!currentSchExceptions || currentSchExceptions.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:0.5rem;color:#64748b">No upcoming exceptions</td></tr>';
+                        return;
+                    }
+                    let html = '';
+                    for (const e of currentSchExceptions) {
+                        html += `
+                            <tr style="border-bottom:1px solid #1e293b">
+                                <td style="padding:0.4rem;font-weight:600;color:#f472b6">${e.date}</td>
+                                <td style="padding:0.4rem">${e.dailyMinutes}m</td>
+                                <td style="padding:0.4rem">${e.scheduleStart} – ${e.scheduleEnd}</td>
+                                <td style="padding:0.4rem;text-align:center">
+                                    <button type="button" class="btn btn-secondary" style="font-size:0.7rem;padding:0.15rem 0.4rem;color:#ef4444" onclick="deleteScheduleException(${e.id})">🗑️ Delete</button>
+                                </td>
+                            </tr>`;
+                    }
+                    tbody.innerHTML = html;
+                }
+
+                async function addScheduleException() {
+                    const userId = parseInt(document.getElementById('schModalUserId').value);
+                    const date = document.getElementById('newExcDate').value;
+                    const mins = parseInt(document.getElementById('newExcMinutes').value) || 120;
+                    const start = document.getElementById('newExcStart').value || '08:00';
+                    const end = document.getElementById('newExcEnd').value || '22:00';
+                    if (!date) { alert('Please select a date.'); return; }
+
+                    try {
+                        const res = await fetch('/api/admin/schedule-exception', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ userId, date, dailyMinutes: mins, scheduleStart: start, scheduleEnd: end })
+                        });
+                        if (res.ok) {
+                            openScheduleModal(userId, document.getElementById('schModalUsername').textContent);
+                        } else {
+                            const err = await res.json();
+                            alert(err.error || 'Failed to add exception');
+                        }
+                    } catch (e) {
+                        alert('Network error');
+                    }
+                }
+
+                async function deleteScheduleException(id) {
+                    if (!confirm('Are you sure you want to delete this schedule exception?')) return;
+                    const userId = parseInt(document.getElementById('schModalUserId').value);
+                    try {
+                        const res = await fetch(`/api/admin/schedule-exception?id=${id}`, { method: 'DELETE' });
+                        if (res.ok) {
+                            openScheduleModal(userId, document.getElementById('schModalUsername').textContent);
+                        } else {
+                            alert('Failed to delete exception');
+                        }
+                    } catch (e) {
+                        alert('Network error');
+                    }
                 }
 
                 function applySchedulePreset(type) {
@@ -1194,6 +1319,6 @@ public static class AdminPage
             </script>
         </body>
         </html>
-        """;
+        """.Replace("v1.2.1", AppVersion.DisplayName);
     }
 }

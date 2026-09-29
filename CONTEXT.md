@@ -21,9 +21,11 @@ A temporary, administrator-granted addition of minutes to a User's Allowance Tim
 ### Bonus Minutes
 Additional active minutes credited to a User's daily usage quota upon approval of a Grace Request.
 
-### Forced Logoff
-The mandatory termination of an active user session triggered when Allowance Time is exhausted or the Schedule Window expires.
+### Enforced Workstation Lock
+The automated locking of an interactive user desktop session via `LockWorkStation` triggered when Allowance Time is exhausted or the Schedule Window expires. Preserves running processes and unsaved document states while preventing user input. If an expired user unlocks the workstation, the background service immediately re-enforces the lock until Grace Time is approved or the next Schedule Window arrives.
 
+### Forced Logoff
+The explicit administrative termination of a user session via `WTSLogoffSession`, reserved for emergency administrative overrides or prolonged locked idle states.
 ### Weekly Schedule
 Day-of-week specific allocation of Allowance Time and Schedule Windows (Sunday through Saturday) defined per Restricted User.
 
@@ -80,3 +82,33 @@ A persistence pattern where day-of-week limits are only stored in `schedule_days
 
 ### Built-in Updater
 An administrative subsystem capable of querying GitHub Releases for newer binary packages, presenting release changelogs, downloading `ParentalControlSetup.exe`, and initiating automated silent in-place upgrades.
+
+### Schedule Exception
+A date-specific single-day override record defining custom Allowance Time and Schedule Windows for a specific calendar date, taking precedence over both Weekly Schedules and baseline limits before expiring automatically.
+
+### Schedule Change Request
+A formal submission by a Restricted User requesting an advance alteration of a Schedule Window or Allowance Time for a specific upcoming date, requiring Administrator adjudication via Telegram or the Remote Admin Interface.
+
+### Decline Reason
+An explanatory message provided by an Administrator when rejecting a Grace Request or Schedule Change Request, surfaced to the Restricted User via desktop widget toasts and the request portal.
+
+### Adaptive Widget
+A floating countdown overlay executing in the Session Agent that dynamically responds to active application geometry by relocating to a secondary display or collapsing into an unobtrusive semi-transparent mini pill during exclusive or borderless fullscreen execution.
+
+### Clock Tampering Detection
+Continuous service-level comparison between monotonic system uptime (`Environment.TickCount64`) and wall clock (`DateTime.UtcNow`), triggering administrative Telegram alerts, audit logs, and monotonic quota clamping if retroactive or accelerated clock drift exceeds 60 seconds.
+
+### Corner Docking
+Standardized anchor presets (`Top-Right`, `Top-Left`, `Bottom-Right`, `Bottom-Left`) utilized by the Adaptive Widget on secondary displays or in compact pill mode to guarantee predictable margins and DPI-safe positioning across varying monitor resolutions.
+
+### Re-Lock Warning
+A 5-second unskippable Win32 `WTSSendMessageW` modal dialog displayed immediately upon an unlock attempt by an expired Restricted User explaining that Allowance Time has ended before re-engaging `WTSDisconnectSession`.
+
+### Self-Contained Schedule Exception
+A date-specific single-day override record persisting explicit Allowance Time and Schedule Window boundaries independently of baseline limits, taking priority in the schedule resolution pipeline before expiring automatically.
+
+### Widget Configuration File
+A per-user JSON configuration document stored at `%LOCALAPPDATA%\ParentalControl\widget.json` retaining preferred fullscreen display monitors, corner docking presets, and transparency settings for standard user accounts.
+
+### Decline Toast
+An acrylic slide-out notification card displayed by the Session Agent for 8 seconds upon receipt of an administrative rejection notice, communicating the specific Decline Reason directly into the user session.

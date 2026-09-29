@@ -65,6 +65,20 @@ public partial class UserDetailViewModel : ObservableObject
 
     [ObservableProperty]
     private ObservableCollection<EventRecord> _eventRecords = [];
+    [ObservableProperty]
+    private ObservableCollection<ScheduleException> _upcomingExceptions = [];
+
+    [ObservableProperty]
+    private DateTime _newExceptionDate = DateTime.Today.AddDays(1);
+
+    [ObservableProperty]
+    private int _newExceptionMinutes = 120;
+
+    [ObservableProperty]
+    private string _newExceptionStart = "08:00";
+
+    [ObservableProperty]
+    private string _newExceptionEnd = "22:00";
 
     public UserDetailViewModel(UserRow user, Dictionary<string, string> sidToUsername, Action navigateBack)
     {
@@ -80,6 +94,7 @@ public partial class UserDetailViewModel : ObservableObject
         LoadWeeklySchedule();
         LoadAppUsage();
         RefreshEvents();
+        LoadUpcomingExceptions();
         EditableUsageMinutes = User.TodayMinutesUsed;
     }
 
@@ -203,6 +218,55 @@ public partial class UserDetailViewModel : ObservableObject
 
         MessageBox.Show($"Jadwal 7 hari berhasil disimpan ({savedCustomCount} hari khusus, {7 - savedCustomCount} hari mengikuti aturan standar).", "Jadwal Disimpan", MessageBoxButton.OK, MessageBoxImage.Information);
         User.RefreshLimits();
+    }
+
+    [RelayCommand]
+    public void LoadUpcomingExceptions()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Now);
+        var list = ScheduleExceptionRepository.GetUpcomingForUser(User.Id, today);
+        UpcomingExceptions = new ObservableCollection<ScheduleException>(list);
+    }
+
+    [RelayCommand]
+    private void AddException()
+    {
+        var date = DateOnly.FromDateTime(NewExceptionDate);
+        if (!TimeOnly.TryParse(NewExceptionStart, out var start) || !TimeOnly.TryParse(NewExceptionEnd, out var end) || start >= end)
+        {
+            MessageBox.Show("Jam batas tidak valid (Format HH:mm, jam mulai harus lebih awal dari jam selesai).", "Validation Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        if (NewExceptionMinutes < 1 || NewExceptionMinutes > 1440)
+        {
+            MessageBox.Show("Menit harian harus antara 1 dan 1440.", "Validation Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        ScheduleExceptionRepository.Upsert(new ScheduleException
+        {
+            UserId = User.Id,
+            ExceptionDate = date,
+            DailyMinutes = NewExceptionMinutes,
+            ScheduleStart = start,
+            ScheduleEnd = end,
+            CreatedAt = DateTime.Now
+        });
+
+        LoadUpcomingExceptions();
+        MessageBox.Show($"Pengecualian khusus untuk tanggal {date:dd/MM/yyyy} berhasil disimpan.", "Berhasil", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    [RelayCommand]
+    private void DeleteException(ScheduleException? exc)
+    {
+        if (exc == null) return;
+        var confirm = MessageBox.Show($"Hapus pengecualian tanggal {exc.ExceptionDate:dd/MM/yyyy}?", "Konfirmasi Hapus", MessageBoxButton.YesNo, MessageBoxImage.Question);
+        if (confirm == MessageBoxResult.Yes)
+        {
+            ScheduleExceptionRepository.Delete(exc.Id);
+            LoadUpcomingExceptions();
+        }
     }
 
     [RelayCommand]

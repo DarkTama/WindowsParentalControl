@@ -82,7 +82,8 @@ public sealed class SessionTracker
 
         var nowTime = TimeOnly.FromDateTime(DateTime.Now);
         var dayOfWeek = DateTime.Now.DayOfWeek;
-        var limit = ScheduleRepository.GetEffectiveLimit(user.Id, dayOfWeek);
+        var today = DateOnly.FromDateTime(DateTime.Now);
+        var limit = ScheduleRepository.GetEffectiveLimit(user.Id, dayOfWeek, today);
         UsageRecord? usage = null;
         if (limit is not null)
         {
@@ -90,20 +91,22 @@ public sealed class SessionTracker
             {
                 _logger.Information("Login denied (outside schedule): {Username}", username);
                 EventRepository.LogEvent(sid, EventType.LOGIN_DENIED, "Outside allowed schedule");
-                NotificationManager.SendMessage(sessionId, "Parental Control", SettingsRepository.GetMessage(SettingsRepository.KeyMsgLoginDeniedCurfew), isWarning: true, timeoutSeconds: 5);
-                SessionManager.ForceLogoff(sessionId);
+                Thread.Sleep(500);
+                NotificationManager.SendMessage(sessionId, "Parental Control", SettingsRepository.GetMessage(SettingsRepository.KeyMsgLoginDeniedCurfew), isWarning: true, timeoutSeconds: 7, wait: true);
+                SessionManager.LockSession(sessionId);
                 return;
             }
 
-            var today = DateOnly.FromDateTime(DateTime.Now);
+            // today already resolved
             usage = UsageRepository.GetUsage(user.Id, today);
             var totalAllowed = limit.DailyMinutes + (usage?.BonusMinutes ?? 0);
             if (usage is not null && usage.MinutesUsed >= totalAllowed)
             {
                 _logger.Information("Login denied (limit reached): {Username}", username);
                 EventRepository.LogEvent(sid, EventType.LOGIN_DENIED, "Daily limit already reached");
-                NotificationManager.SendMessage(sessionId, "Parental Control", SettingsRepository.GetMessage(SettingsRepository.KeyMsgLoginDeniedLimit), isWarning: true, timeoutSeconds: 5);
-                SessionManager.ForceLogoff(sessionId);
+                Thread.Sleep(500);
+                NotificationManager.SendMessage(sessionId, "Parental Control", SettingsRepository.GetMessage(SettingsRepository.KeyMsgLoginDeniedLimit), isWarning: true, timeoutSeconds: 7, wait: true);
+                SessionManager.LockSession(sessionId);
                 return;
             }
         }
@@ -201,9 +204,10 @@ public sealed class SessionTracker
         var user = UserRepository.GetBySid(session.UserSid);
         if (user is not null && user.IsRestricted)
         {
+            var today = DateOnly.FromDateTime(DateTime.Now);
             var nowTime = TimeOnly.FromDateTime(DateTime.Now);
             var dayOfWeek = DateTime.Now.DayOfWeek;
-            var limit = ScheduleRepository.GetEffectiveLimit(user.Id, dayOfWeek);
+            var limit = ScheduleRepository.GetEffectiveLimit(user.Id, dayOfWeek, today);
 
             if (limit is not null)
             {
@@ -211,22 +215,22 @@ public sealed class SessionTracker
                 {
                     _logger.Information("Unlock rejected (curfew): {Username} on session {SessionId}", session.Username, sessionId);
                     EventRepository.LogEvent(session.UserSid, EventType.LOGIN_DENIED, "Outside allowed schedule on unlock");
-                    NotificationManager.SendMessage(sessionId, "Parental Control", SettingsRepository.GetMessage(SettingsRepository.KeyMsgCurfewReached), isWarning: true, timeoutSeconds: 5);
-                    SessionManager.ForceLogoff(sessionId);
-                    _activeSessions.TryRemove(sessionId, out _);
+                    Thread.Sleep(300);
+                    NotificationManager.SendMessage(sessionId, "Parental Control", "Waktu jadwal bermain belum dimulai atau telah berakhir. Sesi dikunci kembali.", isWarning: true, timeoutSeconds: 7, wait: true);
+                    SessionManager.LockSession(sessionId);
                     return;
                 }
 
-                var today = DateOnly.FromDateTime(DateTime.Now);
+                // today already defined
                 var usage = UsageRepository.GetUsage(user.Id, today);
                 var totalAllowed = limit.DailyMinutes + (usage?.BonusMinutes ?? 0);
                 if (usage is not null && usage.MinutesUsed >= totalAllowed)
                 {
                     _logger.Information("Unlock rejected (limit reached): {Username} on session {SessionId}", session.Username, sessionId);
                     EventRepository.LogEvent(session.UserSid, EventType.LOGIN_DENIED, "Daily limit reached on unlock");
-                    NotificationManager.SendMessage(sessionId, "Parental Control", SettingsRepository.GetMessage(SettingsRepository.KeyMsgLimitReached), isWarning: true, timeoutSeconds: 5);
-                    SessionManager.ForceLogoff(sessionId);
-                    _activeSessions.TryRemove(sessionId, out _);
+                    Thread.Sleep(300);
+                    NotificationManager.SendMessage(sessionId, "Parental Control", "Waktu layar hari ini telah habis. Sesi dikunci kembali.", isWarning: true, timeoutSeconds: 7, wait: true);
+                    SessionManager.LockSession(sessionId);
                     return;
                 }
             }
@@ -315,7 +319,7 @@ public sealed class SessionTracker
                         UsageRepository.AddMinutes(clockUser.Id, lockDate, limit.DailyMinutes);
                         EventRepository.LogEvent(session.UserSid, EventType.CLOCK_TAMPER,
                             $"Clock went backwards: {session.LastTick:HH:mm:ss} → {now:HH:mm:ss}. Locked for today.");
-                        SessionManager.ForceLogoff(sessionId);
+                        SessionManager.LockSession(sessionId);
                         _activeSessions.TryRemove(sessionId, out _);
                         continue;
                     }
