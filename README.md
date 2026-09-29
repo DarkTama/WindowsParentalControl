@@ -1,39 +1,57 @@
 # Parental Control for Windows (DarkTama Edition)
 
-An enhanced screen time and schedule curfew management system for Windows 10/11 local accounts. Extended from `robertpin/WindowsParentalControl` with 7-day schedule matrixes, unskippable in-session Win32 warning dialogs, Telegram Bot mobile interactive approvals, an embedded Kestrel Web Admin secured by Authenticator TOTP over LAN/Tailscale, and a lightweight Session Agent for foreground game/app activity logging and tray countdown.
+An enhanced screen time, application telemetry, and schedule curfew management system for Windows 10/11 local accounts. Extended from `robertpin/WindowsParentalControl` with 7-day schedule matrixes, unskippable in-session Win32 warning popups, Telegram Bot mobile interactive approvals, an embedded Kestrel Web Admin with ActivityWatch-style visual timelines and TOTP 2FA, a floating desktop countdown widget, and a resilient Session Agent with automated process spawning.
 
 ---
 
 ## Key Features
 
-### 1. 7-Day Weekly Schedule Matrix
-- Configure custom daily minute quotas and permitted schedule windows for every day of the week (Sunday through Saturday).
-- Differentiate between school days (e.g. 60 min, curfew 20:00) and weekends (e.g. 180 min, curfew 23:00).
-- Automatic fallback to default limits if a specific weekday is omitted.
+### 1. 7-Day Weekly Schedule Matrix & Curfew Clamping
+- Configure distinct daily minute quotas and permitted schedule windows for every day of the week (Sunday through Saturday).
+- Differentiate between school days (e.g. 60 min, curfew 20:00) and weekends (e.g. 180 min, curfew 23:00) per restricted user.
+- Automatic fallback to default limits if a specific weekday schedule is omitted.
+- **Curfew Countdown Clamping**: Widget and user portal timers automatically count down to `Math.Min(dailyRemaining, curfewRemaining)`, visually warning users when curfew arrives before daily quota runs out.
 
-### 2. Unskippable In-Session Modal Warnings
-- Service dispatches native Win32 `WTSSendMessage` modal dialogs directly from `LocalSystem` into the user's active session.
-- Displays session welcome banner at logon with daily quota and curfew hours.
-- Automatic countdown warnings at 15m, 5m, and 1m remaining before forced logoff.
-- Cannot be silenced, hidden, or suppressed by Windows Focus Assist / Do Not Disturb.
+### 2. Unskippable In-Session Modal Warnings & Curfew Alerts
+- Service dispatches native Win32 `WTSSendMessageW` modal dialogs directly from `LocalSystem` into the user's active session.
+- Displays session welcome banner at logon with daily quota and curfew boundaries.
+- Automatic countdown warnings at configurable intervals (default: 15m, 5m, 1m) before forced logoff.
+- Dedicated **Curfew Warning** dialogs if schedule cutoffs approach before quota is exhausted.
+- Cannot be silenced, minimized, or suppressed by Windows Focus Assist / Do Not Disturb.
 
-### 3. Remote Grace Time Requests via Telegram
-- Brother clicks "Request Screen Time..." in the taskbar tray or opens `http://localhost:5050/request`.
-- Selects extension (+15m, +30m, +1h) and enters a reason.
-- Configurable daily request quota per user (default: 1 submission per calendar day, adjustable or disableable via Admin Settings).
-- Offline-safe: request form verifies internet connectivity and disables submission if the home PC is offline.
+### 3. Remote Grace Time Requests via Telegram Bot
+- Restricted user clicks "Request Screen Time..." in the tray, on the floating widget, or visits `http://localhost:5050/request`.
+- Selects extension (+15m, +30m, +1h) and enters an optional justification.
+- Configurable daily request quota per user (default: 1 submission per calendar day; customizable or disableable via Admin Settings).
+- **Offline-Safe**: Request form verifies internet connectivity and disables submission if the home PC is offline.
 - Sends an interactive alert to your private Telegram chat with 1-tap buttons: `[Approve 15m]`, `[Approve 30m]`, `[Decline]`.
-- Approval automatically credits bonus minutes to today's usage without altering permanent limits and pops an approval notification on the brother's screen.
+- Approval immediately credits bonus minutes to today's usage without altering baseline limits and displays an instant notification on the user's screen.
 
-### 4. Embedded Web Admin & Authenticator 2FA (RFC 6238 TOTP)
-- Background service hosts an embedded lightweight Kestrel web server on `http://0.0.0.0:5050` (accessible over local network or Tailscale VPN).
-- Protected by Authenticator TOTP (Google Authenticator, Microsoft Authenticator, 1Password) with constant-time equality checks.
-- Monitor active sessions, view real-time remaining minutes, trigger manual 1-click bonuses, emergency logoffs, or remote screen lock with custom warning message and 10–15s countdown (pauses usage tracking without burning daily allowance).
+### 4. Embedded Web Admin & ActivityWatch Visual Telemetry
+- Embedded Kestrel web host at `http://0.0.0.0:5050` accessible over LAN or Tailscale VPN.
+- Protected by RFC 6238 Authenticator TOTP (Google Authenticator, Microsoft Authenticator, 1Password) with constant-time equality checks and setup QR code generator.
+- **ActivityWatch-Style Dashboard**:
+  - **24-Hour Visual Timeline**: Interactive hourly distribution bar chart highlighting active gaming/browsing hours.
+  - **Live App Pulse**: Real-time foreground app indicator displaying active window titles and process names.
+  - **Filters & Date Presets**: Quick filters for all restricted users, today, yesterday, last 7 days, and last 30 days.
+  - **Ranked Process Table & Stacked Share Bar**: Visual distribution of app usage time (e.g., `RobloxPlayerBeta.exe`, `chrome.exe`).
+- **Remote Session Management**: 1-click bonus grants, emergency force logoffs, or remote session locking with custom warning messages and 15-second countdowns.
 
-### 5. Session Tray Agent & Foreground App Logging
-- `ParentalControl.Agent.exe` runs silently in interactive user sessions.
-- Taskbar notification tray icon displays a live countdown of remaining screen time.
-- Samples `GetForegroundWindow()` every 60s to record active games and apps (e.g., `RobloxPlayerBeta.exe`, `chrome.exe`) and window titles into daily usage logs with 30-day retention.
+### 5. Floating Acrylic Desktop Countdown Widget & Tray Agent
+- **Floating Acrylic Countdown Widget**:
+  - Smooth, frameless, dark acrylic widget showing live HH:MM:SS countdown, active session indicator, and curfew window.
+  - Draggable with position persistence across reboots.
+  - Double-click or tray click to toggle visibility.
+- **Session Tray Agent (`ParentalControl.Agent.exe`)**:
+  - Native WPF message loop running in standard user sessions without dispatcher lag.
+  - Samples `GetForegroundWindow()` every 60s and posts telemetry to the service API.
+  - Automatic admin bypass (exits immediately if run under an elevated Administrator account).
+
+### 6. Anti-Bypass, Session Tracking & Auto-Heal Architecture
+- **Disconnected Session Monitoring**: Captures `WTSDisconnected` sessions across fast user switching and lock screens; service maintains state without accumulating usage during lock.
+- **Enforcement on Unlock**: Re-evaluates curfew and daily quota immediately upon unlock (`SessionUnlock`, `ConsoleConnect`, `RemoteConnect`). If expired while locked, forces logoff instantly.
+- **LocalSystem Agent Auto-Spawner**: Service uses `WTSQueryUserToken`, `DuplicateTokenEx`, and `CreateProcessAsUserW` targeting `winsta0\default` to spawn or revive `ParentalControl.Agent.exe` on service startup, user unlock, and monitor ticks (recovers automatically even if killed via Task Manager or during upgrades).
+- **Non-Destructive Installer Upgrades**: Inno Setup installer stops the service, updates files, and restarts without deleting the service registration, eliminating Windows error 1072 (`ERROR_SERVICE_MARKED_FOR_DELETE`).
 
 ---
 
@@ -51,10 +69,11 @@ An enhanced screen time and schedule curfew management system for Windows 10/11 
 +-------------------------------------------------------------------------------+
 | ParentalControl.Service (Windows Service as LocalSystem, Session 0)           |
 |                                                                               |
-|  - UsageMonitorWorker (60s tick, schedule curfews, WTSSendMessage warnings)   |
-|  - SessionTracker (active session tracking, logon enforcement, clock tamper)  |
+|  - UsageMonitorWorker (60s tick, curfew warnings, agent watchdog, logoff)     |
+|  - SessionTracker (tracks active/disconnected sessions, unlock verification)  |
+|  - AgentSpawner (WTSQueryUserToken + CreateProcessAsUserW into winsta0\default)|
 |  - TelegramWorker (polls callback queries, grants bonus minutes)              |
-|  - WebServerHost (Kestrel :5050 — /request portal & /admin dashboard)        |
+|  - WebServerHost (Kestrel :5050 — /request portal, /admin ActivityWatch UI)   |
 +------------------------------------+------------------------------------------+
                                      |
                                      | (Shared SQLite via WAL)
@@ -63,25 +82,26 @@ An enhanced screen time and schedule curfew management system for Windows 10/11 
 | ParentalControl.Core                                                          |
 |  - Database: C:\ProgramData\ParentalControl\data.db (ACL: SYSTEM & Admins)   |
 |  - Repositories: Users, Limits, Schedules, Usage, GraceRequests, AppUsage     |
-|  - Security: TotpService (RFC 6238 Base32 + constant-time verification)       |
+|  - Security: TotpService (RFC 6238 Base32 + QR PNG + constant-time verify)    |
 |  - Platform: SessionManager & NativeMethods (WTSSendMessage, WTSLogoff)       |
 +------------------------------------+------------------------------------------+
                ^                     ^                     ^
                |                     |                     |
 +--------------+-------------+       |       +-------------+--------------+
 | ParentalControl.Admin      |       |       | ParentalControl.Agent      |
-| (WPF Desktop Application)  |       |       | (Session Tray Helper)      |
+| (WPF Desktop Application)  |       |       | (Session Tray & Widget)    |
 |                            |       |       |                            |
-| - Dashboard & Events       |       |       | - Live Tray Countdown      |
-| - 7-Day Schedule Matrix    |       |       | - 1-Click Request Launcher |
-| - Quick Grace Buttons      |       |       | - GetForegroundWindow      |
-| - Telegram & 2FA Settings  |       |       |   Active App Logger        |
-+----------------------------+       |       +----------------------------+
-                                     |
+| - Dashboard & Events       |       |       | - Floating Acrylic Widget  |
+| - 7-Day Schedule Matrix    |       |       | - Live Tray Countdown      |
+| - Quick Grace Buttons      |       |       | - 1-Click Request Launcher |
+| - Telegram & 2FA Settings  |       |       | - GetForegroundWindow      |
++----------------------------+       |       |   Telemetry Reporter       |
+                                     |       +----------------------------+
                                      v
                  +---------------------------------------+
-                 | Brother's Interactive Session (User)  |
+                 | Restricted User Desktop (winsta0)     |
                  | - Unskippable Modal System Dialogs    |
+                 | - Floating HH:MM:SS Countdown Widget  |
                  | - Browser Request Portal (/request)   |
                  +---------------------------------------+
 ```
@@ -100,10 +120,11 @@ An enhanced screen time and schedule curfew management system for Windows 10/11 
 - **Inno Setup 6**: Optional, only required to generate the setup installer via `build.ps1`.
 
 ---
+
 ## How to Test Locally
 
 ### 1. Run Automated Verification Tests
-Run the built-in assert verification suite to test database models, TOTP crypto, 1-per-day grace rules, and weekly schedule fallbacks:
+Run the built-in assert verification suite to test database models, TOTP crypto, 1-per-day grace rules, weekly schedule fallbacks, hourly activity bucketing, and curfew clamping logic:
 
 ```powershell
 dotnet run --project tests/ParentalControl.Tests
@@ -112,11 +133,15 @@ dotnet run --project tests/ParentalControl.Tests
 Expected output:
 ```
 === Running ParentalControl Self-Checks ===
-✅ TOTP Service Verification Passed.
+✅ TOTP Service & QR Generation Verification Passed.
 ✅ Settings Repository Verification Passed.
-✅ Grace Request Repository Verification Passed.
+✅ Grace Request Repository & Dynamic Limits Verification Passed.
 ✅ Usage and Bonus Minutes Verification Passed.
 ✅ Weekly Schedule & Fallback Verification Passed.
+✅ Session Lock & Unlock Events Verification Passed.
+✅ User Discovery by Username & Console Session Detection Passed.
+✅ Hourly Activity & App Usage Range Verification Passed.
+✅ Session Enumeration & Curfew Clamping Calculation Verification Passed.
 ✅ Cleanup Completed.
 
 🎉 ALL ASSERTIONS PASSED SUCCESSFULLY!
@@ -130,7 +155,7 @@ Expected output:
 ```powershell
 dotnet run --project src/ParentalControl.Admin
 ```
-- Click on any standard user (e.g. `Dreitama` or `Dwiatama`).
+- Select any standard user (e.g. `Dreitama` or `Dwiatama`).
 - Set 7-day limits, test quick grace buttons (`+15 min`, `+30 min`, `+1 hr`), or view logged app activity.
 - Open **⚙️ Settings** to configure your Telegram Bot credentials or setup Authenticator 2FA.
 
@@ -152,22 +177,22 @@ dotnet run --project src/ParentalControl.Service
 - Launches the embedded web server on `http://localhost:5050`.
 - Connects to Telegram updates loop if configured.
 
-#### Step D: Run the Session Tray Agent
+#### Step D: Run the Session Tray Agent & Floating Widget
 In a standard user terminal:
 ```powershell
 dotnet run --project src/ParentalControl.Agent
 ```
+- Displays floating acrylic countdown widget on the desktop.
 - Shows shield icon in taskbar system tray.
-- Hover to view live remaining minutes tooltip.
-- Right click -> "🎮 Request Screen Time..." opens `http://localhost:5050/request`.
+- Hover to view live remaining minutes tooltip; double-click or right-click to toggle widget or open request portal.
 
 #### Step E: Test Browser Endpoints
-- **Brother Request Portal**: Open [http://localhost:5050/request](http://localhost:5050/request)
-  - Displays remaining time, curfew, and request form.
+- **User Request Portal**: Open [http://localhost:5050/request](http://localhost:5050/request)
+  - Displays remaining time (clamped to curfew), curfew schedule, and request form.
   - Submitting sends a notification to your Telegram and records a pending request.
-- **Web Admin Dashboard**: Open [http://localhost:5050/admin](http://localhost:5050/admin)
+- **ActivityWatch Web Admin Dashboard**: Open [http://localhost:5050/admin](http://localhost:5050/admin)
   - Prompts for TOTP code if 2FA is enabled in Settings.
-  - View active sessions, grant extra minutes, or force logoffs remotely over Tailscale.
+  - View 24-hour visual activity timeline, live app pulse, ranked processes, and grant extra minutes or force logoffs remotely over Tailscale.
 
 ---
 
@@ -208,7 +233,8 @@ The installer automatically:
 1. Installs files to `C:\Program Files\ParentalControl\`
 2. Registers and starts `ParentalControl.Service` as an auto-start Windows Service under `LocalSystem`.
 3. Configures `ParentalControl.Agent.exe` in `HKLM\Software\Microsoft\Windows\CurrentVersion\Run` to start at user logon.
-4. Creates Start Menu and Desktop shortcuts for the Admin UI.
+4. Auto-spawns the Agent into active user sessions on install/reinstall without requiring user logout.
+5. Creates Start Menu and Desktop shortcuts for the Admin UI.
 
 ---
 
