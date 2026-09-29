@@ -246,21 +246,34 @@ Debug.Assert(monLimitAfterDelete != null && monLimitAfterDelete.DailyMinutes == 
 Console.WriteLine("✅ Sparse Weekly Schedule & Baseline Fallback Verification Passed.");
 
 // 15. Test AppVersion & UpdateService SemVer Logic
-Debug.Assert(AppVersion.Current == "1.2.0", "Current version should be 1.2.0");
-Debug.Assert(AppVersion.DisplayName == "v1.2.0", "Display name should be v1.2.0");
+Debug.Assert(AppVersion.Current == "1.2.1", "Current version should be 1.2.1");
+Debug.Assert(AppVersion.DisplayName == "v1.2.1", "Display name should be v1.2.1");
 Debug.Assert(AppVersion.GitHubRepo == "DarkTama/WindowsParentalControl", "GitHub repo match");
 
-Debug.Assert(UpdateService.IsNewerVersion("1.3.0", "1.2.0") == true, "1.3.0 is newer than 1.2.0");
-Debug.Assert(UpdateService.IsNewerVersion("2.0.0", "1.2.0") == true, "2.0.0 is newer than 1.2.0");
-Debug.Assert(UpdateService.IsNewerVersion("1.2.1", "1.2.0") == true, "1.2.1 is newer than 1.2.0");
-Debug.Assert(UpdateService.IsNewerVersion("1.2.0", "1.2.0") == false, "1.2.0 is not newer than 1.2.0");
-Debug.Assert(UpdateService.IsNewerVersion("1.1.9", "1.2.0") == false, "1.1.9 is not newer than 1.2.0");
+Debug.Assert(UpdateService.IsNewerVersion("1.3.0", "1.2.1") == true, "1.3.0 is newer than 1.2.1");
+Debug.Assert(UpdateService.IsNewerVersion("2.0.0", "1.2.1") == true, "2.0.0 is newer than 1.2.1");
+Debug.Assert(UpdateService.IsNewerVersion("1.2.2", "1.2.1") == true, "1.2.2 is newer than 1.2.1");
+Debug.Assert(UpdateService.IsNewerVersion("1.2.1", "1.2.1") == false, "1.2.1 is not newer than 1.2.1");
+Debug.Assert(UpdateService.IsNewerVersion("1.2.0", "1.2.1") == false, "1.2.0 is not newer than 1.2.1");
+Debug.Assert(UpdateService.IsNewerVersion("1.1.9", "1.2.1") == false, "1.1.9 is not newer than 1.2.1");
 Console.WriteLine("✅ AppVersion & UpdateService SemVer Comparison Verification Passed.");
 
 var updateCheck = UpdateService.CheckForUpdatesAsync().GetAwaiter().GetResult();
-Debug.Assert(updateCheck.HasUpdate == false, "No update should be pending when no release on GitHub");
-Debug.Assert(updateCheck.Error == null, "Error should be null on 404 (handled gracefully)");
-Console.WriteLine("✅ UpdateService CheckForUpdatesAsync 404 Handled Gracefully.");
+Debug.Assert(updateCheck.Error == null, $"Error should be null on update check: {updateCheck.Error}");
+Console.WriteLine($"✅ UpdateService CheckForUpdatesAsync Passed (Latest: {updateCheck.LatestVersion}, HasUpdate: {updateCheck.HasUpdate}).");
+
+if (!string.IsNullOrWhiteSpace(updateCheck.DownloadUrl))
+{
+    int lastPct = -1;
+    var progress = new Progress<int>(pct => { lastPct = pct; });
+    var (downloadSuccess, downloadedPath, downloadMsg) = UpdateService.DownloadUpdateAsync(updateCheck.DownloadUrl, progress).GetAwaiter().GetResult();
+    Debug.Assert(downloadSuccess, $"Download should succeed: {downloadMsg}");
+    Debug.Assert(File.Exists(downloadedPath), "Downloaded installer should exist");
+    Debug.Assert(new FileInfo(downloadedPath!).Length > 1_000_000, "Downloaded installer should be > 1MB");
+    Debug.Assert(lastPct == 100, "Progress should reach 100%");
+    Console.WriteLine($"✅ UpdateService DownloadUpdateAsync Live Verification Passed ({new FileInfo(downloadedPath!).Length} bytes, 100% progress).");
+    try { File.Delete(downloadedPath!); } catch { }
+}
 
 // Cleanup test user
 UserRepository.DeleteBySid(testSid);

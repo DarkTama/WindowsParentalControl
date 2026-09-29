@@ -2,7 +2,7 @@
 ; Requires Inno Setup 6.2+ (https://jrsoftware.org/isdownload.php)
 
 #define MyAppName      "Parental Control"
-#define MyAppVersion   "1.2.0"
+#define MyAppVersion   "1.2.1"
 #define MyAppPublisher "ParentalControl"
 #define MyAppExeName   "ParentalControl.Admin.exe"
 #define ServiceExeName "ParentalControl.Service.exe"
@@ -51,7 +51,7 @@ Name: "{commondesktop}\{#MyAppName}"; Filename: "{app}\admin\{#MyAppExeName}"; \
     IconFilename: "{app}\admin\{#MyAppExeName}"; Comment: "Launch Parental Control Admin"
 
 [Run]
-Filename: "{app}\admin\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\admin\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent runascurrentuser
 
 [UninstallRun]
 ; Stop agent and delete the service before files are removed
