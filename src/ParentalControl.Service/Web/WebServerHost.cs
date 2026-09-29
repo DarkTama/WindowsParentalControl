@@ -52,11 +52,6 @@ public sealed class WebServerHost : BackgroundService
             var allUsers = UserRepository.GetAll();
             var restrictedUsers = allUsers.Where(u => u.IsRestricted).ToList();
 
-            // Detect user from active session
-            var sessions = _sessionTracker.ActiveSessions.Values.ToList();
-            var activeSession = sessions.FirstOrDefault();
-            User? activeUser = activeSession != null ? UserRepository.GetBySid(activeSession.UserSid) : null;
-
             // Check if specific restricted user was requested via query parameter ?user=...
             var queryUser = ctx.Request.Query["user"].ToString();
             User? targetUser = null;
@@ -64,23 +59,30 @@ public sealed class WebServerHost : BackgroundService
             {
                 targetUser = restrictedUsers.FirstOrDefault(u => string.Equals(u.Username, queryUser, StringComparison.OrdinalIgnoreCase));
             }
-            // Redirect administrator directly to /admin
-            if (activeUser != null && !activeUser.IsRestricted && string.IsNullOrWhiteSpace(queryUser))
+
+            var consoleSession = _sessionTracker.GetConsoleSession();
+            User? consoleUser = consoleSession != null ? UserRepository.GetBySid(consoleSession.UserSid) : null;
+
+            // If no explicit ?user= query:
+            if (targetUser == null)
             {
-                return Results.Redirect("/admin");
+                // If console user is Administrator or unrestricted, redirect directly to /admin
+                if (consoleUser != null && !consoleUser.IsRestricted)
+                {
+                    return Results.Redirect("/admin");
+                }
+
+                // If console user is restricted, target them
+                if (consoleUser != null && consoleUser.IsRestricted)
+                {
+                    targetUser = consoleUser;
+                }
             }
 
             bool isAdminTesting = false;
-
-            // If active user is an active restricted user in session
-            if (targetUser == null && activeUser != null && activeUser.IsRestricted)
-            {
-                targetUser = activeUser;
-            }
-
-            // Fallback for query testing or preview
             if (targetUser == null)
             {
+                // Fallback for query testing or preview
                 if (restrictedUsers.Count > 0)
                 {
                     targetUser = restrictedUsers.FirstOrDefault();
@@ -99,8 +101,12 @@ public sealed class WebServerHost : BackgroundService
             var remaining = Math.Max(0, totalAllowed - used);
             var curfew = limit != null ? $"{limit.ScheduleStart:HH:mm} – {limit.ScheduleEnd:HH:mm}" : "08:00 – 22:00";
 
+            var sessions = _sessionTracker.ActiveSessions.Values.ToList();
             var activeTargetSession = sessions.FirstOrDefault(s => s.UserSid == targetUser.Sid);
-            var elapsedSec = activeTargetSession != null ? (int)(DateTime.Now - activeTargetSession.LastTick).TotalSeconds : 0;
+            bool isSessionActive = activeTargetSession != null;
+            bool isSessionLocked = activeTargetSession?.IsLocked ?? false;
+
+            var elapsedSec = activeTargetSession != null && !isSessionLocked ? (int)(DateTime.Now - activeTargetSession.LastTick).TotalSeconds : 0;
             var remainingSeconds = Math.Max(0, (remaining * 60) - Math.Min(59, Math.Max(0, elapsedSec)));
 
             var isOffline = !await TelegramBotService.CheckConnectivityAsync();
@@ -122,7 +128,9 @@ public sealed class WebServerHost : BackgroundService
                 hasPending,
                 latestReq?.Status,
                 isAdminTesting,
-                availableUsernames);
+                availableUsernames,
+                isSessionActive,
+                isSessionLocked);
             return Results.Content(html, "text/html");
         });
 
@@ -206,6 +214,86 @@ public sealed class WebServerHost : BackgroundService
             {
                 _logger.Error(ex, "Failed to process grace request submission");
                 return Results.BadRequest(new { error = "Permintaan tidak valid." });
+            }
+        });
+
+        // Agent Status API (polled by ParentalControl.Agent running in standard user session)
+        app.MapGet("/api/agent/status", (HttpContext ctx) =>
+        {
+            var username = ctx.Request.Query["user"].ToString();
+            if (string.IsNullOrWhiteSpace(username))
+            {
+                return Results.BadRequest(new { error = "Parameter 'user' harus diisi." });
+            }
+
+            var user = UserRepository.GetByUsername(username);
+            if (user == null || !user.IsRestricted)
+            {
+                return Results.Ok(new
+                {
+                    username,
+                    isRestricted = false,
+                    remainingSeconds = 0,
+                    curfew = "Akun tidak dibatasi",
+                    isLocked = false
+                });
+            }
+
+            var today = DateOnly.FromDateTime(DateTime.Now);
+            var dayOfWeek = DateTime.Now.DayOfWeek;
+            var limit = ScheduleRepository.GetEffectiveLimit(user.Id, dayOfWeek);
+            var usage = UsageRepository.GetUsage(user.Id, today);
+            var totalAllowed = (limit?.DailyMinutes ?? 120) + (usage?.BonusMinutes ?? 0);
+            var used = usage?.MinutesUsed ?? 0;
+            var remMinutes = Math.Max(0, totalAllowed - used);
+
+            var sessions = _sessionTracker.ActiveSessions.Values.ToList();
+            var session = sessions.FirstOrDefault(s => s.UserSid == user.Sid);
+            var isLocked = session?.IsLocked ?? false;
+            var elapsedSec = session != null && !isLocked ? (int)(DateTime.Now - session.LastTick).TotalSeconds : 0;
+            var remainingSeconds = Math.Max(0, (remMinutes * 60) - Math.Min(59, Math.Max(0, elapsedSec)));
+
+            var curfew = limit != null ? $"{limit.ScheduleStart:HH:mm} – {limit.ScheduleEnd:HH:mm}" : "08:00 – 22:00";
+
+            return Results.Ok(new
+            {
+                username = user.Username,
+                isRestricted = true,
+                remainingSeconds,
+                curfew,
+                isLocked
+            });
+        });
+
+        // Agent Activity Reporting API (posted by ParentalControl.Agent to record foreground window)
+        app.MapPost("/api/agent/activity", async (HttpContext ctx) =>
+        {
+            try
+            {
+                using var reader = new StreamReader(ctx.Request.Body);
+                var body = await reader.ReadToEndAsync();
+                var doc = JsonDocument.Parse(body);
+                var username = doc.RootElement.GetProperty("username").GetString();
+                var processName = doc.RootElement.GetProperty("processName").GetString();
+                var windowTitle = doc.RootElement.TryGetProperty("windowTitle", out var wt) ? wt.GetString() ?? "" : "";
+
+                if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(processName))
+                {
+                    return Results.BadRequest();
+                }
+
+                var user = UserRepository.GetByUsername(username);
+                if (user != null && user.IsRestricted)
+                {
+                    var today = DateOnly.FromDateTime(DateTime.Now);
+                    AppUsageRepository.AddMinutes(user.Id, today, processName, windowTitle, 1);
+                }
+
+                return Results.Ok(new { success = true });
+            }
+            catch
+            {
+                return Results.BadRequest();
             }
         });
 

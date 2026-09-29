@@ -1,12 +1,16 @@
+using System.IO;
+using System.Net.Http;
 using System.Diagnostics;
+using System.Net.Http.Json;
 using System.Runtime.InteropServices;
 using System.Text;
-using ParentalControl.Core.Data;
 
 namespace ParentalControl.Agent;
 
 public static class ActivityTracker
 {
+    private static readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(3) };
+
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
 
@@ -15,6 +19,17 @@ public static class ActivityTracker
 
     [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern int GetWindowTextW(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr OpenProcess(uint processAccess, bool bInheritHandle, uint processId);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern bool QueryFullProcessImageNameW(IntPtr hProcess, int dwFlags, StringBuilder lpExeName, ref int lpdwSize);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool CloseHandle(IntPtr hObject);
+
+    private const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
 
     public static (string ProcessName, string Title) SampleForegroundWindow()
     {
@@ -27,12 +42,33 @@ public static class ActivityTracker
             if (pid == 0) return ("Unknown", "");
 
             string processName = "Unknown";
-            try
+            var hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+            if (hProcess != IntPtr.Zero)
             {
-                using var proc = Process.GetProcessById((int)pid);
-                processName = proc.ProcessName;
+                try
+                {
+                    var sbExe = new StringBuilder(1024);
+                    int size = sbExe.Capacity;
+                    if (QueryFullProcessImageNameW(hProcess, 0, sbExe, ref size))
+                    {
+                        processName = Path.GetFileNameWithoutExtension(sbExe.ToString());
+                    }
+                }
+                finally
+                {
+                    CloseHandle(hProcess);
+                }
             }
-            catch { }
+
+            if (processName == "Unknown")
+            {
+                try
+                {
+                    using var proc = Process.GetProcessById((int)pid);
+                    processName = proc.ProcessName;
+                }
+                catch { }
+            }
 
             var sb = new StringBuilder(512);
             GetWindowTextW(hwnd, sb, sb.Capacity);
@@ -46,23 +82,29 @@ public static class ActivityTracker
         }
     }
 
-    public static void RecordTick(int userId)
+    public static async Task ReportActivityAsync(string username)
     {
-        var (process, title) = SampleForegroundWindow();
-        if (process == "Unknown" || string.IsNullOrWhiteSpace(process)) return;
-
-        // Skip explorer / shell components from clogging top activity
-        if (process.Equals("explorer", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(title))
-            return;
-
-        var today = DateOnly.FromDateTime(DateTime.Now);
-        Task.Run(() =>
+        try
         {
-            try
+            var (process, title) = SampleForegroundWindow();
+            if (process == "Unknown" || string.IsNullOrWhiteSpace(process)) return;
+
+            // Skip bare explorer / shell desktop clicks
+            if (process.Equals("explorer", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(title))
+                return;
+
+            var payload = new
             {
-                AppUsageRepository.AddMinutes(userId, today, process, title, 1);
-            }
-            catch { }
-        });
+                username,
+                processName = process,
+                windowTitle = title
+            };
+
+            await _httpClient.PostAsJsonAsync("http://127.0.0.1:5050/api/agent/activity", payload);
+        }
+        catch
+        {
+            // Service not running or network busy; drop tick silently
+        }
     }
 }

@@ -20,6 +20,12 @@ public static class SessionManager
             sessionId,
             false);
     }
+    public static int GetActiveConsoleSessionId()
+    {
+        var id = NativeMethods.WTSGetActiveConsoleSessionId();
+        return id == 0xFFFFFFFF ? -1 : (int)id;
+    }
+
 
     public static string? GetSessionUsername(int sessionId)
     {

@@ -8,25 +8,21 @@
         Topmost="True"
         ShowInTaskbar="False"
         ResizeMode="NoResize"
-        SizeToContent="WidthAndHeight"
-        MouseLeftButtonDown="Window_MouseLeftButtonDown">
+        Width="240"
+        Height="172"
+        MouseLeftButtonDown="Window_MouseLeftButtonDown"
+        SourceInitialized="Window_SourceInitialized">
 
-    <Window.Resources>
-        <BooleanToVisibilityConverter x:Key="BoolToVis" />
-    </Window.Resources>
-
-    <Grid Margin="12">
+    <Grid>
         <!-- ═══ EXPANDED WIDGET ═══ -->
         <Border x:Name="ExpandedPanel"
                 Width="240"
+                Height="172"
                 Background="#131c2e"
                 BorderBrush="#2563eb"
                 BorderThickness="1.5"
                 CornerRadius="16"
                 Padding="16,14">
-            <Border.Effect>
-                <DropShadowEffect BlurRadius="20" ShadowDepth="4" Direction="270" Color="#000000" Opacity="0.65" />
-            </Border.Effect>
             <StackPanel>
                 <!-- Top drag handle / controls bar -->
                 <DockPanel LastChildFill="False" Margin="0,0,0,10">
@@ -35,13 +31,7 @@
                         <TextBlock x:Name="UserTitleText" Text="Dreitama" FontSize="12" FontWeight="SemiBold" Foreground="#94a3b8" VerticalAlignment="Center" />
                     </StackPanel>
 
-                    <!-- Close button (Admins only) -->
-                    <Button x:Name="CloseBtn" DockPanel.Dock="Right" Content="✕" Width="20" Height="20"
-                            Margin="4,0,0,0"
-                            Background="Transparent" BorderBrush="Transparent" Foreground="#64748b" FontSize="11"
-                            Cursor="Hand" Click="CloseBtn_Click" />
-
-                    <!-- Collapse button -->
+                    <!-- Close / Minimize button -->
                     <Button x:Name="CollapseBtn" DockPanel.Dock="Right" Content="−" Width="20" Height="20"
                             Background="Transparent" BorderBrush="Transparent" Foreground="#94a3b8" FontSize="14" FontWeight="Bold"
                             Cursor="Hand" Click="CollapseBtn_Click" ToolTip="Kecilkan Widget" />
@@ -81,9 +71,6 @@
                 BorderThickness="1.5"
                 CornerRadius="18"
                 Padding="10,0">
-            <Border.Effect>
-                <DropShadowEffect BlurRadius="16" ShadowDepth="3" Direction="270" Color="#000000" Opacity="0.6" />
-            </Border.Effect>
             <DockPanel LastChildFill="False" VerticalAlignment="Center">
                 <TextBlock Text="⏱" FontSize="12" Margin="0,0,4,0" VerticalAlignment="Center" />
                 <TextBlock x:Name="MiniCountdownText" Text="--:--" FontSize="13" FontWeight="Bold" Foreground="#38bdf8"

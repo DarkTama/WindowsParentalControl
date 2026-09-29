@@ -20,6 +20,16 @@ public sealed class SessionTracker
     public bool IsAwake => _isAwake;
 
     public IReadOnlyDictionary<int, ActiveSession> ActiveSessions => _activeSessions;
+    public ActiveSession? GetConsoleSession()
+    {
+        var consoleId = SessionManager.GetActiveConsoleSessionId();
+        if (consoleId >= 0 && _activeSessions.TryGetValue(consoleId, out var session))
+        {
+            return session;
+        }
+        return null;
+    }
+
 
     public void Initialize()
     {

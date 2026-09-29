@@ -13,8 +13,23 @@ public static class RequestPage
         bool hasPendingRequest,
         string? latestStatus,
         bool isAdminTesting = false,
-        List<string>? availableUsers = null)
+        List<string>? availableUsers = null,
+        bool isSessionActive = true,
+        bool isSessionLocked = false)
     {
+        var sessionStatusBadge = "";
+        if (!isSessionActive)
+        {
+            sessionStatusBadge = """<span class="session-badge badge-offline">⏹ Sesi Tidak Aktif (Waktu Dijeda)</span>""";
+        }
+        else if (isSessionLocked)
+        {
+            sessionStatusBadge = """<span class="session-badge badge-locked">⏸ Sesi Terkunci (Waktu Dijeda)</span>""";
+        }
+        else
+        {
+            sessionStatusBadge = """<span class="session-badge badge-active">▶ Sesi Aktif</span>""";
+        }
         var adminBanner = "";
         if (isAdminTesting)
         {
@@ -119,6 +134,18 @@ public static class RequestPage
                     font-size: 0.85rem;
                     font-weight: 500;
                 }
+                .session-badge {
+                    padding: 0.35rem 0.85rem;
+                    border-radius: 9999px;
+                    font-size: 0.8rem;
+                    font-weight: 600;
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 0.35rem;
+                }
+                .badge-active { background: #064e3b; color: #a7f3d0; border: 1px solid #059669; }
+                .badge-locked { background: #451a03; color: #fde68a; border: 1px solid #d97706; }
+                .badge-offline { background: #1e293b; color: #94a3b8; border: 1px solid #475569; }
                 .timer-panel {
                     background: #0b1120;
                     border: 1px solid #1e293b;
@@ -256,7 +283,10 @@ public static class RequestPage
             <div class="card">
                 <div class="header-row">
                     <h1>🎮 Waktu Layar</h1>
-                    <div class="user-badge">Akun: <strong>{{username}}</strong></div>
+                    <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap">
+                        {{sessionStatusBadge}}
+                        <div class="user-badge">Akun: <strong>{{username}}</strong></div>
+                    </div>
                 </div>
 
                 <div class="timer-panel">
@@ -299,7 +329,7 @@ public static class RequestPage
 
             <script>
                 let totalSecondsRemaining = {{remainingSeconds}};
-
+                const isSessionTicking = {{(isSessionActive && !isSessionLocked ? "true" : "false")}};
                 function formatTime(totalSec) {
                     if (totalSec <= 0) return "00:00 (Habis)";
                     const hours = Math.floor(totalSec / 3600);
@@ -323,13 +353,15 @@ public static class RequestPage
                     if (totalSecondsRemaining <= 0) {
                         timerElem.style.color = '#ef4444';
                         return;
+                    if (isSessionTicking) {
+                        totalSecondsRemaining--;
                     }
-                    totalSecondsRemaining--;
                 }
 
                 tickCountdown();
-                setInterval(tickCountdown, 1000);
-
+                if (isSessionTicking) {
+                    setInterval(tickCountdown, 1000);
+                }
                 async function submitForm(e) {
                     e.preventDefault();
                     const btn = document.getElementById('submitBtn');

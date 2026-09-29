@@ -1,3 +1,4 @@
+using ParentalControl.Core.Platform;
 using System.Diagnostics;
 using ParentalControl.Core.Data;
 using ParentalControl.Core.Models;
@@ -91,6 +92,15 @@ var events = EventRepository.GetEvents(userSid: testSid);
 Debug.Assert(events.Any(e => e.EventType == EventType.SESSION_LOCKED), "SESSION_LOCKED event should be recorded");
 Debug.Assert(events.Any(e => e.EventType == EventType.SESSION_UNLOCKED), "SESSION_UNLOCKED event should be recorded");
 Console.WriteLine("✅ Session Lock & Unlock Events Verification Passed.");
+
+// 8. Test GetByUsername and Console Session detection
+var foundUser = UserRepository.GetByUsername("TESTBROTHER");
+Debug.Assert(foundUser != null && foundUser.Id == user.Id, "GetByUsername should find user case-insensitively");
+var notFound = UserRepository.GetByUsername("NonExistentUser123");
+Debug.Assert(notFound == null, "GetByUsername should return null for nonexistent user");
+var consoleId = SessionManager.GetActiveConsoleSessionId();
+Debug.Assert(consoleId >= -1, "GetActiveConsoleSessionId should return valid session ID or -1");
+Console.WriteLine("✅ User Discovery by Username & Console Session Detection Passed.");
 
 // Cleanup test user
 UserRepository.DeleteBySid(testSid);

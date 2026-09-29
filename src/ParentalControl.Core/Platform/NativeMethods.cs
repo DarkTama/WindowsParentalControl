@@ -34,6 +34,8 @@ internal static class NativeMethods
         int version,
         out IntPtr ppSessionInfo,
         out int pCount);
+    [DllImport("kernel32.dll")]
+    internal static extern uint WTSGetActiveConsoleSessionId();
     internal const int MB_OK = 0x00000000;
     internal const int MB_ICONWARNING = 0x00000030;
     internal const int MB_ICONINFORMATION = 0x00000040;
