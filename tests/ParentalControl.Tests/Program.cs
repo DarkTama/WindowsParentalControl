@@ -246,15 +246,15 @@ Debug.Assert(monLimitAfterDelete != null && monLimitAfterDelete.DailyMinutes == 
 Console.WriteLine("✅ Sparse Weekly Schedule & Baseline Fallback Verification Passed.");
 
 // 15. Test AppVersion & UpdateService SemVer Logic
-Debug.Assert(AppVersion.Current == "1.1.0", "Current version should be 1.1.0");
-Debug.Assert(AppVersion.DisplayName == "v1.1.0", "Display name should be v1.1.0");
+Debug.Assert(AppVersion.Current == "1.2.0", "Current version should be 1.2.0");
+Debug.Assert(AppVersion.DisplayName == "v1.2.0", "Display name should be v1.2.0");
 Debug.Assert(AppVersion.GitHubRepo == "DarkTama/WindowsParentalControl", "GitHub repo match");
 
-Debug.Assert(UpdateService.IsNewerVersion("1.2.0", "1.1.0") == true, "1.2.0 is newer than 1.1.0");
-Debug.Assert(UpdateService.IsNewerVersion("2.0.0", "1.1.0") == true, "2.0.0 is newer than 1.1.0");
-Debug.Assert(UpdateService.IsNewerVersion("1.1.1", "1.1.0") == true, "1.1.1 is newer than 1.1.0");
-Debug.Assert(UpdateService.IsNewerVersion("1.1.0", "1.1.0") == false, "1.1.0 is not newer than 1.1.0");
-Debug.Assert(UpdateService.IsNewerVersion("1.0.9", "1.1.0") == false, "1.0.9 is not newer than 1.1.0");
+Debug.Assert(UpdateService.IsNewerVersion("1.3.0", "1.2.0") == true, "1.3.0 is newer than 1.2.0");
+Debug.Assert(UpdateService.IsNewerVersion("2.0.0", "1.2.0") == true, "2.0.0 is newer than 1.2.0");
+Debug.Assert(UpdateService.IsNewerVersion("1.2.1", "1.2.0") == true, "1.2.1 is newer than 1.2.0");
+Debug.Assert(UpdateService.IsNewerVersion("1.2.0", "1.2.0") == false, "1.2.0 is not newer than 1.2.0");
+Debug.Assert(UpdateService.IsNewerVersion("1.1.9", "1.2.0") == false, "1.1.9 is not newer than 1.2.0");
 Console.WriteLine("✅ AppVersion & UpdateService SemVer Comparison Verification Passed.");
 
 var updateCheck = UpdateService.CheckForUpdatesAsync().GetAwaiter().GetResult();

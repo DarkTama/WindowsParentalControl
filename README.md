@@ -6,12 +6,10 @@ An enhanced screen time, application telemetry, and schedule curfew management s
 
 ## Key Features
 
-### 1. 7-Day Weekly Schedule Matrix & Curfew Clamping
-- Configure distinct daily minute quotas and permitted schedule windows for every day of the week (Sunday through Saturday).
-- Differentiate between school days (e.g. 60 min, curfew 20:00) and weekends (e.g. 180 min, curfew 23:00) per restricted user.
-- Automatic fallback to default limits if a specific weekday schedule is omitted.
+### 1. 7-Day Weekly Schedule Matrix, Sparse Overrides & Curfew Clamping
+- **Baseline Limits & Sparse Overrides**: Default quotas and curfew windows are defined once per user. Specific weekdays only store overrides when explicitly marked as custom (`IsCustom = true`), keeping database footprint lean and clean.
+- **Quick Presets**: 1-click presets for **School Days (Mon–Fri)**, **Weekend (Sat–Sun)**, or **Reset to Baseline** available in both WPF Admin and Web Admin.
 - **Curfew Countdown Clamping**: Widget and user portal timers automatically count down to `Math.Min(dailyRemaining, curfewRemaining)`, visually warning users when curfew arrives before daily quota runs out.
-
 ### 2. Unskippable In-Session Modal Warnings & Curfew Alerts
 - Service dispatches native Win32 `WTSSendMessageW` modal dialogs directly from `LocalSystem` into the user's active session.
 - Displays session welcome banner at logon with daily quota and curfew boundaries.
@@ -61,6 +59,10 @@ An enhanced screen time, application telemetry, and schedule curfew management s
 - **Dynamic Telegram Approval Buttons**: Grace request approval keyboards dynamically scale to match requested minutes (e.g., offering `[Approve 60m]`, `[Approve 30m]`, `[Approve 15m]`, `[Decline]`).
 - **Storage Auto-Pruning**: JPEGs downscaled to 1920px max width (quality 70, ~150–250 KB) stored in `%ProgramData%\ParentalControl\captures\` with automatic rolling pruning (7-day retention + 500 MB hard storage cap).
 
+
+### 8. Transparent User Portal ("Jadwal Main") & In-Place GitHub Updater
+- **"Jadwal Main" Schedule View**: Children visiting `http://localhost:5050/request` see a transparent 7-day schedule grid with daily allowances, curfew boundaries, and an active "Hari ini" badge so expectations are clear without exposing admin settings.
+- **Built-in GitHub Releases Updater**: Desktop Admin and Web Admin check `DarkTama/WindowsParentalControl` for new releases, display changelogs, download `ParentalControlSetup.exe`, and perform automated silent upgrades with service restart.
 ---
 
 ## Architecture
@@ -156,7 +158,11 @@ Expected output:
 ✅ Screen Capture Repository CRUD & Storage Tracking Passed.
 ✅ Screen Capture Pruning (Retention Days & Size Limit) Passed.
 ✅ Telegram Dynamic Approval Buttons Calculation Passed.
+✅ Sparse Weekly Schedule & Baseline Fallback Verification Passed.
+✅ AppVersion & UpdateService SemVer Comparison Verification Passed.
+✅ UpdateService CheckForUpdatesAsync 404 Handled Gracefully.
 ✅ Cleanup Completed.
+
 🎉 ALL ASSERTIONS PASSED SUCCESSFULLY!
 ```
 
