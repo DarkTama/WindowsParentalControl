@@ -22,7 +22,8 @@ An enhanced screen time, application telemetry, and schedule curfew management s
 - Selects extension (+15m, +30m, +1h) and enters an optional justification.
 - Configurable daily request quota per user (default: 1 submission per calendar day; customizable or disableable via Admin Settings).
 - **Offline-Safe**: Request form verifies internet connectivity and disables submission if the home PC is offline.
-- Sends an interactive alert to your private Telegram chat with 1-tap buttons: `[Approve 15m]`, `[Approve 30m]`, `[Decline]`.
+- Sends an interactive alert to your private Telegram chat with dynamic 1-tap buttons scaling to the requested minutes (e.g. `[Approve 60m]`, `[Approve 30m]`, `[Approve 15m]`, `[Decline]`).
+- **Interactive Decline Feedback Loop**: Declining offers instant 1-tap presets (`[⏱️ Belum Waktunya]`, `[📚 Selesaikan PR Dulu]`, `[🌙 Sudah Malam]`) or `[✏️ Alasan Lain]` opening a 3-minute text reply window. The decline reason is immediately dispatched to the child's desktop as an in-session toast notification and pinned on their `/request` portal.
 - Approval immediately credits bonus minutes to today's usage without altering baseline limits and displays an instant notification on the user's screen.
 
 ### 4. Embedded Web Admin & ActivityWatch Visual Telemetry
@@ -40,14 +41,18 @@ An enhanced screen time, application telemetry, and schedule curfew management s
   - Smooth, frameless, dark acrylic widget showing live HH:MM:SS countdown, active session indicator, and curfew window.
   - Draggable with position persistence across reboots.
   - Double-click or tray click to toggle visibility.
+  - **Adaptive Fullscreen & Multi-Monitor Docking**: Automatically detects foreground fullscreen games and applications, docking cleanly to configurable corner presets (`TopRight`, `TopLeft`, `BottomRight`, `BottomLeft`) or collapsing to a mini pill mode.
+  - Configurable monitor targeting and interactive visual corner preview in Settings, persisted per-user in `%LOCALAPPDATA%\ParentalControl\widget.json` without requiring administrator elevation.
 - **Session Tray Agent (`ParentalControl.Agent.exe`)**:
   - Native WPF message loop running in standard user sessions without dispatcher lag.
   - Samples `GetForegroundWindow()` every 60s and posts telemetry to the service API.
   - Automatic admin bypass (exits immediately if run under an elevated Administrator account).
 
 ### 6. Anti-Bypass, Session Tracking & Auto-Heal Architecture
+- **Non-Destructive Enforced Workstation Lock**: When daily quotas or curfew limits expire, the service enforces a workstation lock (`WTSDisconnectSession`) rather than a destructive logoff (`WTSLogoffSession`), preserving open documents, school work, and game state safely in memory.
+- **Enforcement on Unlock**: Re-evaluates curfew and daily quota immediately upon unlock (`SessionUnlock`, `ConsoleConnect`, `RemoteConnect`). If expired while locked, displays an unskippable 5-second modal warning and immediately re-locks the desktop.
+- **Monotonic Clock Tampering Watchdog**: `UsageMonitorWorker` continuously compares monotonic CPU uptime (`Environment.TickCount64`) against wall-clock time (`DateTime.UtcNow`). Detected clock rollbacks or advances > 60s trigger security audit events, instant session lock, and Telegram alerts.
 - **Disconnected Session Monitoring**: Captures `WTSDisconnected` sessions across fast user switching and lock screens; service maintains state without accumulating usage during lock.
-- **Enforcement on Unlock**: Re-evaluates curfew and daily quota immediately upon unlock (`SessionUnlock`, `ConsoleConnect`, `RemoteConnect`). If expired while locked, forces logoff instantly.
 - **LocalSystem Agent Auto-Spawner**: Service uses `WTSQueryUserToken`, `DuplicateTokenEx`, and `CreateProcessAsUserW` targeting `winsta0\default` to spawn or revive `ParentalControl.Agent.exe` on service startup, user unlock, and monitor ticks (recovers automatically even if killed via Task Manager or during upgrades).
 - **Non-Destructive Installer Upgrades**: Inno Setup installer stops the service, updates files, and restarts without deleting the service registration, eliminating Windows error 1072 (`ERROR_SERVICE_MARKED_FOR_DELETE`).
 
@@ -61,9 +66,15 @@ An enhanced screen time, application telemetry, and schedule curfew management s
 
 
 ### 8. Transparent User Portal ("Jadwal Main") & In-Place GitHub Updater
-- **"Jadwal Main" Schedule View**: Children visiting `http://localhost:5050/request` see a transparent 7-day schedule grid with daily allowances, curfew boundaries, and an active "Hari ini" badge so expectations are clear without exposing admin settings.
+- **"Jadwal Main" Segmented Day Strip**: Children visiting `http://localhost:5050/request` see a modern 7-day segmented strip with active day indicators, remaining quota, curfew windows, and pinned rejection notices so expectations are clear without exposing admin settings.
+- **Touch-Responsive Mobile UI**: Web Admin and User Portal feature touch-friendly horizontal table scrolling and responsive card layouts tailored for phones and tablets.
 - **Built-in GitHub Releases Updater**: Desktop Admin and Web Admin check `DarkTama/WindowsParentalControl` for new releases, display changelogs, download `ParentalControlSetup.exe`, and perform automated silent upgrades with service restart.
----
+
+### 9. Single-Day Schedule Exceptions & Advance Change Requests
+- **Self-Contained Single-Day Overrides**: Grant temporary quota or curfew exceptions for holidays, sick days, or exam weeks without modifying baseline 7-day schedules.
+- **Independent Schema**: Stored in `schedule_exceptions` with fully copied boundary fields to prevent baseline schedule drift.
+- **Advance Requests by Children**: Children can submit advance schedule change requests directly from the `/request` portal.
+- **Full Management**: Add, review, and delete exceptions via both WPF Desktop Admin and Kestrel Web Admin.
 
 ## Architecture
 
@@ -79,7 +90,7 @@ An enhanced screen time, application telemetry, and schedule curfew management s
 +-------------------------------------------------------------------------------+
 | ParentalControl.Service (Windows Service as LocalSystem, Session 0)           |
 |                                                                               |
-|  - UsageMonitorWorker (60s tick, curfew warnings, agent watchdog, logoff)     |
+|  - UsageMonitorWorker (60s tick, curfew warnings, agent watchdog, lock)         |
 |  - SessionTracker (tracks active/disconnected sessions, unlock verification)  |
 |  - AgentSpawner (WTSQueryUserToken + CreateProcessAsUserW into winsta0\default)|
 |  - TelegramWorker (polls callback queries, grants bonus minutes)              |
@@ -93,31 +104,50 @@ An enhanced screen time, application telemetry, and schedule curfew management s
 |  - Database: C:\ProgramData\ParentalControl\data.db (ACL: SYSTEM & Admins)   |
 |  - Repositories: Users, Limits, Schedules, Usage, GraceRequests, AppUsage, Captures|
 |  - Security: TotpService (RFC 6238 Base32 + QR PNG + constant-time verify)    |
-|  - Platform: SessionManager & NativeMethods (WTSSendMessage, WTSLogoff)       |
+|  - Platform: SessionManager & NativeMethods (WTSSendMessage, WTSDisconnect)     |
 +------------------------------------+------------------------------------------+
                ^                     ^                     ^
                |                     |                     |
-+--------------+-------------+       |       +-------------+--------------+
-| ParentalControl.Admin      |       |       | ParentalControl.Agent      |
-| (WPF Desktop Application)  |       |       | (Session Tray & Widget)    |
-|                            |       |       |                            |
-| - Dashboard & Events       |       |       | - Floating Acrylic Widget  |
-| - 7-Day Schedule Matrix    |       |       | - Live Tray Countdown      |
-| - Quick Grace Buttons      |       |       | - 1-Click Request Launcher |
-|  - Telegram & 2FA Settings  |       | - GetForegroundWindow      |
-|                             |       |   Telemetry Reporter       |
-|                             |       | - Silent Screen Capture    |
-|                             |       |   (All Monitors GDI)       |
-+----------------------------+       +----------------------------+
-                                     |       +----------------------------+
-                                     v
-                 +---------------------------------------+
-                 | Restricted User Desktop (winsta0)     |
-                 | - Unskippable Modal System Dialogs    |
-                 | - Floating HH:MM:SS Countdown Widget  |
-                 | - Browser Request Portal (/request)   |
-                 +---------------------------------------+
++----------------------------+               +----------------------------+
+| ParentalControl.Admin      |               | ParentalControl.Agent      |
+| (WPF Desktop Application)  |               | (Session Tray & Widget)    |
+|                            |               |                            |
+| - Dashboard & Telemetry    |               | - Floating Acrylic Widget  |
+| - 7-Day Schedule Matrix    |               |   (Adaptive Fullscreen)    |
+| - Schedule Exceptions      |               | - Live Tray Countdown      |
+| - Quick Grace Buttons      |               | - 1-Click Request Launcher |
+| - Telegram & 2FA Settings  |               | - Foreground App Telemetry |
+|                            |               | - Silent Screen Capture    |
+|                            |               | - Decline Toast Receiver   |
++----------------------------+               +-------------+--------------+
+                                                           |
+                                                           v
+                                        +---------------------------------------+
+                                        | Restricted User Desktop (winsta0)     |
+                                        | - Unskippable Modal System Dialogs    |
+                                        | - Floating HH:MM:SS Countdown Widget  |
+                                        | - Browser Request Portal (/request)   |
+                                        +---------------------------------------+
 ```
+
+---
+
+## Technology Stack
+
+| Layer | Technologies & Frameworks | Description |
+| :--- | :--- | :--- |
+| **Language & Runtime** | **C# 12**, **.NET 8.0 Windows** (`net8.0-windows`) | High-performance modern managed runtime targeting Windows 10/11 x64 with full native API access. |
+| **Windows Service** | **Microsoft.Extensions.Hosting**, `BackgroundService` | Session 0 background daemon running as `NT AUTHORITY\LocalSystem` with resilient worker loops. |
+| **Web Server & API** | **ASP.NET Core Kestrel** (Embedded) | In-process HTTP server on `0.0.0.0:5050`, serving responsive HTML5 dashboards, REST endpoints, and SSE/polling. |
+| **Desktop Admin UI** | **WPF (Windows Presentation Foundation)**, MVVM, XAML | Modern desktop management console with data-binding, responsive custom controls, and live telemetry cards. |
+| **Session Agent & Widget** | **WPF Acrylic UI**, Win32 Tray Context | Per-session tray app and frameless floating acrylic countdown widget with corner docking and DWM blur effects. |
+| **Native Interop (P/Invoke)** | `wtsapi32.dll`, `user32.dll`, `advapi32.dll`, `kernel32.dll`, `shell32.dll` | Direct Win32 integration: `WTSSendMessageW`, `WTSDisconnectSession`, `WTSQueryUserToken`, `CreateProcessAsUserW`, `GetForegroundWindow`, `SHAppBarMessage`. |
+| **Database & Storage** | **SQLite 3** (`Microsoft.Data.Sqlite`), **WAL Mode** | Embedded ACID database at `%ProgramData%\ParentalControl\data.db` secured with SYSTEM & Admin ACLs; non-blocking concurrent reads. |
+| **Security & 2FA** | **RFC 6238 TOTP**, **QRCoder**, `RandomNumberGenerator` | Hardware-agnostic two-factor authentication with QR code generation, `FixedTimeEquals` timing-safe comparison, and HttpOnly cookies. |
+| **Messaging & Bot** | **Telegram Bot API** (`Telegram.Bot` / Webhook Fallback) | Bidirectional mobile management with interactive inline keyboards, callback routing, and custom reply window trackers. |
+| **Telemetry & Capture** | **GDI+** (`System.Drawing.Common`) | Silent virtual desktop capture across all monitors (`SystemInformation.VirtualScreen`) with JPEG compression and rolling 7-day / 500 MB retention pruning. |
+| **Installer & Packaging** | **Inno Setup 6**, Self-Contained Single-File Publish | Non-destructive service upgrade installer with elevation delegation (`runascurrentuser`) and auto-spawning hooks. |
+| **CI/CD & Automation** | **GitHub Actions**, SemVer Releases | Automated multi-project compilation, test execution, installer packaging, and automated GitHub Releases publishing. |
 
 ---
 
@@ -159,10 +189,11 @@ Expected output:
 ✅ Screen Capture Pruning (Retention Days & Size Limit) Passed.
 ✅ Telegram Dynamic Approval Buttons Calculation Passed.
 ✅ Sparse Weekly Schedule & Baseline Fallback Verification Passed.
+✅ Schedule Exception Precedence & Extended Grace Requests Verification Passed.
 ✅ AppVersion & UpdateService SemVer Comparison Verification Passed.
-✅ UpdateService CheckForUpdatesAsync 404 Handled Gracefully.
+✅ UpdateService CheckForUpdatesAsync Passed (Latest: 1.2.1, HasUpdate: False).
+ℹ️ UpdateService DownloadUpdateAsync live 137MB download skipped (set TEST_LIVE_DOWNLOAD=1 to run).
 ✅ Cleanup Completed.
-
 🎉 ALL ASSERTIONS PASSED SUCCESSFULLY!
 ```
 
