@@ -77,16 +77,28 @@ begin
               and (ResultCode = 0);
 end;
 
-procedure StopAndDeleteService();
+procedure StopService();
 var
     ResultCode: Integer;
 begin
     Exec('sc', ExpandConstant('stop {#ServiceName}'),
          '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-    Sleep(2000);
-    Exec('sc', ExpandConstant('delete {#ServiceName}'),
+    Sleep(2500);
+end;
+
+procedure UpdateService();
+var
+    ResultCode: Integer;
+    BinPath: String;
+begin
+    BinPath := ExpandConstant('"{app}\service\{#ServiceExeName}"');
+    Exec('sc', ExpandConstant('config {#ServiceName}')
+         + ' binPath= ' + BinPath
+         + ' start= auto',
          '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-    Sleep(1000);
+    Exec('sc', ExpandConstant('failure {#ServiceName}')
+         + ' reset= 86400 actions= restart/10000/restart/30000/restart/60000',
+         '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
 end;
 
 procedure CreateService();
@@ -166,7 +178,7 @@ function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
     StopRunningProcesses();
     if ServiceExists() then
-        StopAndDeleteService();
+        StopService();
     Result := '';
 end;
 
@@ -176,12 +188,15 @@ begin
     begin
         StopRunningProcesses();
         if ServiceExists() then
-            StopAndDeleteService();
+            StopService();
     end
     else if CurStep = ssPostInstall then
     begin
-        // After files are copied: create and start the service
-        CreateService();
+        // After files are copied: create if new or update if existing, then start
+        if not ServiceExists() then
+            CreateService()
+        else
+            UpdateService();
         StartService();
     end;
 end;

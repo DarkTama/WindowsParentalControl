@@ -33,8 +33,8 @@ public sealed class SessionTracker
 
     public void Initialize()
     {
-        var sessions = SessionManager.GetActiveSessions();
-        foreach (var (sessionId, username, sid) in sessions)
+        var sessions = SessionManager.GetLoggedOnSessions();
+        foreach (var (sessionId, username, sid, isLocked) in sessions)
         {
             if (sid is null) continue;
 
@@ -44,9 +44,14 @@ public sealed class SessionTracker
                 user = UserRepository.Upsert(sid, username, false);
             }
 
-            _activeSessions.TryAdd(sessionId, new ActiveSession(sessionId, sid, username, DateTime.Now));
-            _logger.Information("Recovered existing session: {Username} (SID: {Sid}) on session {SessionId}",
-                username, sid, sessionId);
+            _activeSessions.TryAdd(sessionId, new ActiveSession(sessionId, sid, username, DateTime.Now, isLocked));
+            _logger.Information("Recovered existing session: {Username} (SID: {Sid}) on session {SessionId} (Locked: {IsLocked})",
+                username, sid, sessionId, isLocked);
+
+            if (user.IsRestricted && !isLocked)
+            {
+                EnsureAgentRunning(sessionId);
+            }
         }
     }
 
@@ -115,6 +120,7 @@ public sealed class SessionTracker
         }
         EventRepository.LogEvent(sid, EventType.LOGIN, loginDetail);
         _logger.Information("User logged in (restricted): {Username}", username);
+        EnsureAgentRunning(sessionId);
     }
 
     public void OnUserLogoff(int sessionId)
@@ -174,12 +180,113 @@ public sealed class SessionTracker
 
     public void OnSessionUnlock(int sessionId)
     {
-        if (_activeSessions.TryGetValue(sessionId, out var session))
+        if (!_activeSessions.TryGetValue(sessionId, out var session))
         {
-            _activeSessions[sessionId] = session with { IsLocked = false, LastTick = DateTime.Now };
-            EventRepository.LogEvent(session.UserSid, EventType.SESSION_UNLOCKED, "Session unlocked");
-            _logger.Information("Session {SessionId} ({Username}) unlocked", sessionId, session.Username);
+            var username = SessionManager.GetSessionUsername(sessionId);
+            var sid = SessionManager.GetSessionUserSid(sessionId);
+            if (username != null && sid != null)
+            {
+                var recoveredUser = UserRepository.GetBySid(sid) ?? UserRepository.Upsert(sid, username, false);
+                session = new ActiveSession(sessionId, sid, username, DateTime.Now, false);
+                _activeSessions.TryAdd(sessionId, session);
+                _logger.Information("Session {SessionId} ({Username}) restored on unlock", sessionId, username);
+            }
+            else
+            {
+                _logger.Warning("Session {SessionId} unlocked but user could not be determined", sessionId);
+                return;
+            }
         }
+
+        var user = UserRepository.GetBySid(session.UserSid);
+        if (user is not null && user.IsRestricted)
+        {
+            var nowTime = TimeOnly.FromDateTime(DateTime.Now);
+            var dayOfWeek = DateTime.Now.DayOfWeek;
+            var limit = ScheduleRepository.GetEffectiveLimit(user.Id, dayOfWeek);
+
+            if (limit is not null)
+            {
+                if (nowTime < limit.ScheduleStart || nowTime >= limit.ScheduleEnd)
+                {
+                    _logger.Information("Unlock rejected (curfew): {Username} on session {SessionId}", session.Username, sessionId);
+                    EventRepository.LogEvent(session.UserSid, EventType.LOGIN_DENIED, "Outside allowed schedule on unlock");
+                    NotificationManager.SendMessage(sessionId, "Parental Control", SettingsRepository.GetMessage(SettingsRepository.KeyMsgCurfewReached), isWarning: true, timeoutSeconds: 5);
+                    SessionManager.ForceLogoff(sessionId);
+                    _activeSessions.TryRemove(sessionId, out _);
+                    return;
+                }
+
+                var today = DateOnly.FromDateTime(DateTime.Now);
+                var usage = UsageRepository.GetUsage(user.Id, today);
+                var totalAllowed = limit.DailyMinutes + (usage?.BonusMinutes ?? 0);
+                if (usage is not null && usage.MinutesUsed >= totalAllowed)
+                {
+                    _logger.Information("Unlock rejected (limit reached): {Username} on session {SessionId}", session.Username, sessionId);
+                    EventRepository.LogEvent(session.UserSid, EventType.LOGIN_DENIED, "Daily limit reached on unlock");
+                    NotificationManager.SendMessage(sessionId, "Parental Control", SettingsRepository.GetMessage(SettingsRepository.KeyMsgLimitReached), isWarning: true, timeoutSeconds: 5);
+                    SessionManager.ForceLogoff(sessionId);
+                    _activeSessions.TryRemove(sessionId, out _);
+                    return;
+                }
+            }
+
+            EnsureAgentRunning(sessionId);
+        }
+
+        _activeSessions[sessionId] = session with { IsLocked = false, LastTick = DateTime.Now };
+        EventRepository.LogEvent(session.UserSid, EventType.SESSION_UNLOCKED, "Session unlocked");
+        _logger.Information("Session {SessionId} ({Username}) unlocked", sessionId, session.Username);
+    }
+
+    public void EnsureAgentRunning(int sessionId)
+    {
+        try
+        {
+            if (SessionManager.IsProcessRunningInSession("ParentalControl.Agent", sessionId))
+            {
+                return;
+            }
+
+            var agentPath = GetAgentExecutablePath();
+            if (agentPath == null)
+            {
+                _logger.Warning("Agent executable not found; cannot launch in session {SessionId}", sessionId);
+                return;
+            }
+
+            var launched = SessionManager.LaunchProcessInSession(sessionId, agentPath);
+            if (launched)
+            {
+                _logger.Information("Successfully launched Agent in session {SessionId} ({Path})", sessionId, agentPath);
+            }
+            else
+            {
+                _logger.Warning("Failed to launch Agent in session {SessionId}", sessionId);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Error launching Agent in session {SessionId}", sessionId);
+        }
+    }
+
+    private static string? GetAgentExecutablePath()
+    {
+        var baseDir = AppContext.BaseDirectory;
+        // 1. Production layout: service is in {app}\service, agent is in {app}\agent
+        var path1 = Path.GetFullPath(Path.Combine(baseDir, "..", "agent", "ParentalControl.Agent.exe"));
+        if (File.Exists(path1)) return path1;
+
+        // 2. Same directory (tests or flat build)
+        var path2 = Path.Combine(baseDir, "ParentalControl.Agent.exe");
+        if (File.Exists(path2)) return path2;
+
+        // 3. Standard Program Files installation path
+        var path3 = @"C:\Program Files\ParentalControl\agent\ParentalControl.Agent.exe";
+        if (File.Exists(path3)) return path3;
+
+        return null;
     }
 
     public void TickAllSessions()

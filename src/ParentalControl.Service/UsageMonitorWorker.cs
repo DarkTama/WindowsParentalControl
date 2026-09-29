@@ -83,6 +83,7 @@ public sealed class UsageMonitorWorker : BackgroundService
 
             var user = UserRepository.GetBySid(session.UserSid);
             if (user is null || !user.IsRestricted) continue;
+            _sessionTracker.EnsureAgentRunning(sessionId);
 
             var limit = ScheduleRepository.GetEffectiveLimit(user.Id, dayOfWeek);
             if (limit is null) continue;

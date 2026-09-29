@@ -93,9 +93,9 @@ public static class SessionManager
         }
     }
 
-    public static List<(int SessionId, string Username, string? Sid)> GetActiveSessions()
+    public static List<(int SessionId, string Username, string? Sid, bool IsLocked)> GetLoggedOnSessions()
     {
-        var sessions = new List<(int, string, string?)>();
+        var sessions = new List<(int, string, string?, bool)>();
 
         if (!NativeMethods.WTSEnumerateSessionsW(
                 NativeMethods.WTS_CURRENT_SERVER_HANDLE,
@@ -115,15 +115,19 @@ public static class SessionManager
                 var current = Marshal.PtrToStructure<NativeMethods.WTS_SESSION_INFO>(
                     pSessionInfo + i * structSize);
 
-                if (current.State != NativeMethods.WTS_CONNECTSTATE_CLASS.WTSActive)
+                if (current.State != NativeMethods.WTS_CONNECTSTATE_CLASS.WTSActive &&
+                    current.State != NativeMethods.WTS_CONNECTSTATE_CLASS.WTSDisconnected)
+                {
                     continue;
+                }
 
                 var username = GetSessionUsername(current.SessionID);
                 if (string.IsNullOrEmpty(username))
                     continue;
 
                 var sid = GetSessionUserSid(current.SessionID);
-                sessions.Add((current.SessionID, username, sid));
+                bool isLocked = current.State == NativeMethods.WTS_CONNECTSTATE_CLASS.WTSDisconnected;
+                sessions.Add((current.SessionID, username, sid, isLocked));
             }
         }
         finally
@@ -132,5 +136,109 @@ public static class SessionManager
         }
 
         return sessions;
+    }
+
+    public static List<(int SessionId, string Username, string? Sid)> GetActiveSessions()
+    {
+        return GetLoggedOnSessions()
+            .Where(s => !s.IsLocked)
+            .Select(s => (s.SessionId, s.Username, s.Sid))
+            .ToList();
+    }
+
+    public static bool IsProcessRunningInSession(string processName, int sessionId)
+    {
+        try
+        {
+            var procNameWithoutExt = Path.GetFileNameWithoutExtension(processName);
+            var processes = System.Diagnostics.Process.GetProcessesByName(procNameWithoutExt);
+            foreach (var p in processes)
+            {
+                try
+                {
+                    if (p.SessionId == sessionId) return true;
+                }
+                catch { }
+                finally
+                {
+                    p.Dispose();
+                }
+            }
+        }
+        catch { }
+        return false;
+    }
+
+    public static bool LaunchProcessInSession(int sessionId, string exePath, string? arguments = null)
+    {
+        if (!File.Exists(exePath))
+        {
+            return false;
+        }
+
+        var hUserToken = IntPtr.Zero;
+        var hPrimaryToken = IntPtr.Zero;
+        var lpEnvironment = IntPtr.Zero;
+
+        try
+        {
+            if (!NativeMethods.WTSQueryUserToken((uint)sessionId, out hUserToken))
+            {
+                return false;
+            }
+
+            if (!NativeMethods.DuplicateTokenEx(
+                    hUserToken,
+                    NativeMethods.MAXIMUM_ALLOWED,
+                    IntPtr.Zero,
+                    NativeMethods.SecurityImpersonation,
+                    NativeMethods.TokenPrimary,
+                    out hPrimaryToken))
+            {
+                return false;
+            }
+
+            if (!NativeMethods.CreateEnvironmentBlock(out lpEnvironment, hPrimaryToken, false))
+            {
+                lpEnvironment = IntPtr.Zero;
+            }
+
+            var si = new NativeMethods.STARTUPINFO();
+            si.cb = Marshal.SizeOf<NativeMethods.STARTUPINFO>();
+            si.lpDesktop = @"winsta0\default";
+
+            var workingDir = Path.GetDirectoryName(exePath);
+            var cmdLine = string.IsNullOrEmpty(arguments) ? $"\"{exePath}\"" : $"\"{exePath}\" {arguments}";
+
+            var success = NativeMethods.CreateProcessAsUserW(
+                hPrimaryToken,
+                null,
+                cmdLine,
+                IntPtr.Zero,
+                IntPtr.Zero,
+                false,
+                NativeMethods.CREATE_UNICODE_ENVIRONMENT,
+                lpEnvironment,
+                workingDir,
+                ref si,
+                out var pi);
+
+            if (success)
+            {
+                if (pi.hProcess != IntPtr.Zero) NativeMethods.CloseHandle(pi.hProcess);
+                if (pi.hThread != IntPtr.Zero) NativeMethods.CloseHandle(pi.hThread);
+            }
+
+            return success;
+        }
+        finally
+        {
+            if (lpEnvironment != IntPtr.Zero)
+                NativeMethods.DestroyEnvironmentBlock(lpEnvironment);
+            if (hPrimaryToken != IntPtr.Zero)
+                NativeMethods.CloseHandle(hPrimaryToken);
+            if (hUserToken != IntPtr.Zero)
+                NativeMethods.CloseHandle(hUserToken);
+        }
     }
 }

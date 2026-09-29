@@ -53,3 +53,12 @@ The foreground process name and window title currently receiving user interactio
 
 ### Activity Timeline
 Historical daily aggregation of application usage durations and window titles for a Restricted User across past dates (retained for up to 30 days).
+
+### Disconnected Session Monitoring
+Terminal Services sessions in `WTSDisconnected` state (e.g. fast user switch or locked screen) maintained in memory across service restarts without usage accumulation, re-enforcing curfew and quota constraints immediately upon unlock.
+
+### Session Agent Auto-Spawner
+LocalSystem background mechanism utilizing `WTSQueryUserToken` and `CreateProcessAsUserW` to launch `ParentalControl.Agent.exe` directly into interactive user sessions (`winsta0\default`) on service start, unlock, or after installer upgrades.
+
+### Curfew Countdown Clamping
+Enforcement policy ensuring countdown widgets and user request portals display `Math.Min(dailyRemaining, curfewRemaining)` so restricted users are visually warned of schedule cutoffs even when daily quota remains.

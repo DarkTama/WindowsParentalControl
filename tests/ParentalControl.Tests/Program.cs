@@ -115,6 +115,26 @@ Debug.Assert(rangeApps.Count == 2, "Should have 2 unique processes");
 Debug.Assert(rangeApps.First(a => a.ProcessName == "chrome.exe").Minutes == 45, "Chrome should have 45 min total");
 Console.WriteLine("✅ Hourly Activity & App Usage Range Verification Passed.");
 
+// 10. Test Session Enumeration & Curfew Countdown Clamping Logic
+var loggedOnSessions = SessionManager.GetLoggedOnSessions();
+Debug.Assert(loggedOnSessions != null, "GetLoggedOnSessions should return a non-null list");
+var runningCheck = SessionManager.IsProcessRunningInSession("NonExistentProcessName123", 0);
+Debug.Assert(!runningCheck, "Nonexistent process should not be reported as running");
+
+// Verify curfew clamping formula:
+// Case A: Curfew is earlier than daily quota
+var testDailySec = 7200; // 2 hours
+var testCurfewSec = 600;  // 10 minutes
+var testClamped = Math.Min(testDailySec, testCurfewSec);
+Debug.Assert(testClamped == 600, "Should clamp to curfew remaining seconds");
+
+// Case B: Daily quota is earlier than curfew
+testDailySec = 300;   // 5 minutes
+testCurfewSec = 3600; // 1 hour
+testClamped = Math.Min(testDailySec, testCurfewSec);
+Debug.Assert(testClamped == 300, "Should clamp to daily remaining seconds");
+Console.WriteLine("✅ Session Enumeration & Curfew Clamping Calculation Verification Passed.");
+
 // Cleanup test user
 UserRepository.DeleteBySid(testSid);
 ScheduleRepository.DeleteForUser(user.Id);

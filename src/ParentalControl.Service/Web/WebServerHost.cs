@@ -99,8 +99,7 @@ public sealed class WebServerHost : BackgroundService
             var usage = UsageRepository.GetUsage(targetUser.Id, today);
             var totalAllowed = (limit?.DailyMinutes ?? 120) + (usage?.BonusMinutes ?? 0);
             var used = usage?.MinutesUsed ?? 0;
-            var remaining = Math.Max(0, totalAllowed - used);
-            var curfew = limit != null ? $"{limit.ScheduleStart:HH:mm} – {limit.ScheduleEnd:HH:mm}" : "08:00 – 22:00";
+            var dailyRemaining = Math.Max(0, totalAllowed - used);
 
             var sessions = _sessionTracker.ActiveSessions.Values.ToList();
             var activeTargetSession = sessions.FirstOrDefault(s => s.UserSid == targetUser.Sid);
@@ -108,7 +107,27 @@ public sealed class WebServerHost : BackgroundService
             bool isSessionLocked = activeTargetSession?.IsLocked ?? false;
 
             var elapsedSec = activeTargetSession != null && !isSessionLocked ? (int)(DateTime.Now - activeTargetSession.LastTick).TotalSeconds : 0;
-            var remainingSeconds = Math.Max(0, (remaining * 60) - Math.Min(59, Math.Max(0, elapsedSec)));
+            var dailySec = Math.Max(0, (dailyRemaining * 60) - Math.Min(59, Math.Max(0, elapsedSec)));
+
+            var nowTime = DateTime.Now.TimeOfDay;
+            var curfewSec = int.MaxValue;
+            if (limit != null)
+            {
+                var startSpan = limit.ScheduleStart.ToTimeSpan();
+                var endSpan = limit.ScheduleEnd.ToTimeSpan();
+                if (nowTime < startSpan || nowTime >= endSpan)
+                {
+                    curfewSec = 0;
+                }
+                else
+                {
+                    curfewSec = Math.Max(0, (int)(endSpan - nowTime).TotalSeconds);
+                }
+            }
+
+            var remainingSeconds = Math.Min(dailySec, curfewSec);
+            var remaining = (remainingSeconds + 59) / 60;
+            var curfew = limit != null ? $"{limit.ScheduleStart:HH:mm} – {limit.ScheduleEnd:HH:mm}" : "08:00 – 22:00";
 
             var isOffline = !await TelegramBotService.CheckConnectivityAsync();
             var maxRequests = SettingsRepository.GetMaxDailyRequests();
@@ -252,7 +271,25 @@ public sealed class WebServerHost : BackgroundService
             var session = sessions.FirstOrDefault(s => s.UserSid == user.Sid);
             var isLocked = session?.IsLocked ?? false;
             var elapsedSec = session != null && !isLocked ? (int)(DateTime.Now - session.LastTick).TotalSeconds : 0;
-            var remainingSeconds = Math.Max(0, (remMinutes * 60) - Math.Min(59, Math.Max(0, elapsedSec)));
+            var dailySec = Math.Max(0, (remMinutes * 60) - Math.Min(59, Math.Max(0, elapsedSec)));
+
+            var nowTime = DateTime.Now.TimeOfDay;
+            var curfewSec = int.MaxValue;
+            if (limit != null)
+            {
+                var startSpan = limit.ScheduleStart.ToTimeSpan();
+                var endSpan = limit.ScheduleEnd.ToTimeSpan();
+                if (nowTime < startSpan || nowTime >= endSpan)
+                {
+                    curfewSec = 0;
+                }
+                else
+                {
+                    curfewSec = Math.Max(0, (int)(endSpan - nowTime).TotalSeconds);
+                }
+            }
+
+            var remainingSeconds = Math.Min(dailySec, curfewSec);
 
             var curfew = limit != null ? $"{limit.ScheduleStart:HH:mm} – {limit.ScheduleEnd:HH:mm}" : "08:00 – 22:00";
 
