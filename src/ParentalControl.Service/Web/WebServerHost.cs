@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -21,7 +22,8 @@ public sealed class WebServerHost : BackgroundService
     private readonly Serilog.ILogger _logger;
     private readonly HashSet<string> _validAdminTokens = new();
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, (string ProcessName, string WindowTitle, DateTime LastSeen)> _liveActivities = new(StringComparer.OrdinalIgnoreCase);
-
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, CaptureCommandState> _captureStates = new(StringComparer.OrdinalIgnoreCase);
+    public static event Action<ScreenCaptureRecord>? OnCaptureReceived;
     public WebServerHost(SessionTracker sessionTracker, TelegramBotService telegramBotService, Serilog.ILogger logger)
     {
         _sessionTracker = sessionTracker;
@@ -41,6 +43,67 @@ public sealed class WebServerHost : BackgroundService
         builder.Services.AddRouting();
 
         var app = builder.Build();
+
+        // Setup Telegram Bot command hooks
+        TelegramBotService.OnCaptureRequested = async (userArg) =>
+        {
+            string targetUsername;
+            if (!string.IsNullOrWhiteSpace(userArg))
+            {
+                targetUsername = userArg;
+            }
+            else
+            {
+                var activeSessions = _sessionTracker.ActiveSessions.Values.Where(s => !s.IsLocked).ToList();
+                var firstRestricted = activeSessions.Select(s => UserRepository.GetBySid(s.UserSid)).FirstOrDefault(u => u != null && u.IsRestricted);
+                if (firstRestricted == null) return null;
+                targetUsername = firstRestricted.Username;
+            }
+            return await TriggerCaptureAndWaitAsync(targetUsername, "TELEGRAM", 15);
+        };
+
+        TelegramBotService.OnStatusRequested = () =>
+        {
+            var restrictedUsers = UserRepository.GetAll().Where(u => u.IsRestricted).ToList();
+            if (restrictedUsers.Count == 0) return Task.FromResult("ℹ️ Belum ada akun pengguna terbatas yang terdaftar.");
+
+            var sb = new StringBuilder();
+            sb.AppendLine("📊 *Status Screen Time Hari Ini:*\n");
+            var today = DateOnly.FromDateTime(DateTime.Now);
+            var dayOfWeek = DateTime.Now.DayOfWeek;
+
+            foreach (var u in restrictedUsers)
+            {
+                var limit = ScheduleRepository.GetEffectiveLimit(u.Id, dayOfWeek);
+                var usage = UsageRepository.GetUsage(u.Id, today);
+                var totalAllowed = (limit?.DailyMinutes ?? 120) + (usage?.BonusMinutes ?? 0);
+                var used = usage?.MinutesUsed ?? 0;
+                var remaining = Math.Max(0, totalAllowed - used);
+
+                var session = _sessionTracker.ActiveSessions.Values.FirstOrDefault(s => s.UserSid == u.Sid);
+                var isOnline = session != null;
+                var isLocked = session?.IsLocked ?? false;
+
+                string stateText;
+                if (!isOnline) stateText = "⚫ Offline";
+                else if (isLocked) stateText = "🔒 Terkunci (Dijeda)";
+                else stateText = "🟢 Aktif di desktop";
+
+                sb.AppendLine($"👤 *{u.Username}* ({stateText})");
+                sb.AppendLine($"   ⏳ Sisa: *{remaining}m* / {totalAllowed}m (Terpakai: {used}m)");
+                if (limit != null)
+                {
+                    sb.AppendLine($"   🌙 Jam Malam: `{limit.ScheduleStart:HH:mm} – {limit.ScheduleEnd:HH:mm}`");
+                }
+
+                if (_liveActivities.TryGetValue(u.Username, out var act) && (DateTime.Now - act.LastSeen).TotalMinutes < 2)
+                {
+                    sb.AppendLine($"   🎮 Sedang membuka: `{act.ProcessName}`");
+                }
+                sb.AppendLine();
+            }
+            return Task.FromResult(sb.ToString());
+        };
 
         app.MapGet("/", () => Results.Redirect("/request"));
 
@@ -293,13 +356,30 @@ public sealed class WebServerHost : BackgroundService
 
             var curfew = limit != null ? $"{limit.ScheduleStart:HH:mm} – {limit.ScheduleEnd:HH:mm}" : "08:00 – 22:00";
 
+            var captureRequested = false;
+            var watchInterval = 0;
+            if (_captureStates.TryGetValue(user.Username, out var capState))
+            {
+                if (capState.WatchMode && DateTime.Now < capState.WatchExpiresAt)
+                {
+                    watchInterval = 10;
+                }
+                if (capState.CaptureRequested)
+                {
+                    captureRequested = true;
+                    capState.CaptureRequested = false;
+                }
+            }
+
             return Results.Ok(new
             {
                 username = user.Username,
                 isRestricted = true,
                 remainingSeconds,
                 curfew,
-                isLocked
+                isLocked,
+                captureRequested,
+                watchIntervalSeconds = watchInterval
             });
         });
 
@@ -322,7 +402,6 @@ public sealed class WebServerHost : BackgroundService
 
                 var user = UserRepository.GetByUsername(username);
                 if (user != null && user.IsRestricted)
-                if (user != null && user.IsRestricted)
                 {
                     _liveActivities[user.Username] = (processName, windowTitle, DateTime.Now);
                     var today = DateOnly.FromDateTime(DateTime.Now);
@@ -335,6 +414,62 @@ public sealed class WebServerHost : BackgroundService
             {
                 return Results.BadRequest();
             }
+        });
+
+        // Agent Silent Screen Capture Upload API
+        app.MapPost("/api/agent/capture", async (HttpContext ctx) =>
+        {
+            var username = ctx.Request.Headers["X-User"].ToString();
+            var trigger = ctx.Request.Headers["X-Trigger"].ToString();
+            if (string.IsNullOrWhiteSpace(trigger)) trigger = "MANUAL";
+            int.TryParse(ctx.Request.Headers["X-Width"], out var width);
+            int.TryParse(ctx.Request.Headers["X-Height"], out var height);
+
+            if (string.IsNullOrWhiteSpace(username))
+            {
+                return Results.BadRequest(new { error = "Header X-User is required." });
+            }
+
+            var user = UserRepository.GetByUsername(username);
+            if (user == null)
+            {
+                return Results.NotFound(new { error = "User not found." });
+            }
+
+            var userCapturesDir = Path.Combine(DatabaseManager.CapturesDirectory, user.Id.ToString());
+            if (!Directory.Exists(userCapturesDir))
+            {
+                Directory.CreateDirectory(userCapturesDir);
+            }
+
+            var fileName = $"{DateTime.Now:yyyyMMdd_HHmmss}_{Guid.NewGuid():N}.jpg";
+            var filePath = Path.Combine(userCapturesDir, fileName);
+
+            using (var fs = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                await ctx.Request.Body.CopyToAsync(fs);
+            }
+
+            var fi = new FileInfo(filePath);
+            var record = new ScreenCaptureRecord
+            {
+                UserId = user.Id,
+                Timestamp = DateTime.Now,
+                FilePath = filePath,
+                Width = width > 0 ? width : 1920,
+                Height = height > 0 ? height : 1080,
+                FileSizeBytes = fi.Length,
+                TriggerType = trigger,
+                AdminIp = ctx.Connection.RemoteIpAddress?.ToString()
+            };
+
+            record = ScreenCaptureRepository.Add(record);
+            _logger.Information("Screen capture recorded for {Username} ({Width}x{Height}, {Bytes} bytes, Trigger: {Trigger})",
+                user.Username, record.Width, record.Height, record.FileSizeBytes, record.TriggerType);
+
+            OnCaptureReceived?.Invoke(record);
+
+            return Results.Ok(new { id = record.Id, path = record.FilePath });
         });
 
         // Web Admin Page
@@ -656,6 +791,170 @@ public sealed class WebServerHost : BackgroundService
             return Results.Ok(new { success = true });
         });
 
+        // Admin Trigger Capture API (Single-shot or Watch mode)
+        app.MapPost("/api/admin/capture/request", async (HttpContext ctx) =>
+        {
+            if (!CheckAuth(ctx)) return Results.Unauthorized();
+
+            using var reader = new StreamReader(ctx.Request.Body);
+            var body = await reader.ReadToEndAsync();
+            var doc = JsonDocument.Parse(body);
+            var username = doc.RootElement.GetProperty("username").GetString();
+            var mode = doc.RootElement.TryGetProperty("mode", out var m) ? m.GetString() ?? "single" : "single";
+            var enableWatch = doc.RootElement.TryGetProperty("enableWatch", out var ew) && ew.GetBoolean();
+
+            if (string.IsNullOrWhiteSpace(username)) return Results.BadRequest(new { error = "Parameter 'username' harus diisi." });
+
+            var user = UserRepository.GetByUsername(username);
+            if (user == null) return Results.NotFound(new { error = "User tidak ditemukan." });
+
+            var session = _sessionTracker.ActiveSessions.Values.FirstOrDefault(s => s.UserSid == user.Sid);
+            if (session == null || session.IsLocked)
+            {
+                return Results.BadRequest(new { error = $"Sesi {username} sedang terkunci atau tidak aktif di desktop." });
+            }
+
+            if (mode == "watch")
+            {
+                var state = _captureStates.GetOrAdd(user.Username, _ => new CaptureCommandState());
+                state.WatchMode = enableWatch;
+                state.CaptureRequested = enableWatch;
+                state.WatchExpiresAt = enableWatch ? DateTime.Now.AddMinutes(10) : DateTime.MinValue;
+                state.Trigger = "WATCH";
+                return Results.Ok(new { success = true, watchMode = enableWatch });
+            }
+            else
+            {
+                var state = _captureStates.GetOrAdd(user.Username, _ => new CaptureCommandState());
+                state.CaptureRequested = true;
+                state.Trigger = "MANUAL";
+                return Results.Ok(new { success = true, captureRequested = true });
+            }
+        });
+
+        // Admin Heartbeat for Watch Mode (extends timeout)
+        app.MapPost("/api/admin/capture/heartbeat", (HttpContext ctx) =>
+        {
+            if (!CheckAuth(ctx)) return Results.Unauthorized();
+            var username = ctx.Request.Query["user"].ToString();
+            if (!string.IsNullOrWhiteSpace(username) && _captureStates.TryGetValue(username, out var cs) && cs.WatchMode)
+            {
+                cs.WatchExpiresAt = DateTime.Now.AddMinutes(10);
+            }
+            return Results.Ok(new { success = true });
+        });
+
+        // Admin Get Latest Capture API
+        app.MapGet("/api/admin/captures/latest", (HttpContext ctx) =>
+        {
+            if (!CheckAuth(ctx)) return Results.Unauthorized();
+            var username = ctx.Request.Query["user"].ToString();
+            if (string.IsNullOrWhiteSpace(username) || username == "all")
+            {
+                var firstRestricted = UserRepository.GetAll().FirstOrDefault(u => u.IsRestricted);
+                if (firstRestricted == null) return Results.Ok(new { capture = (object?)null });
+                username = firstRestricted.Username;
+            }
+
+            var user = UserRepository.GetByUsername(username);
+            if (user == null) return Results.NotFound();
+
+            var latest = ScreenCaptureRepository.GetLatestByUser(user.Id);
+            if (latest == null) return Results.Ok(new { capture = (object?)null });
+
+            return Results.Ok(new
+            {
+                capture = new
+                {
+                    id = latest.Id,
+                    userId = latest.UserId,
+                    username = user.Username,
+                    timestamp = latest.Timestamp.ToString("yyyy-MM-dd HH:mm:ss"),
+                    width = latest.Width,
+                    height = latest.Height,
+                    fileSizeBytes = latest.FileSizeBytes,
+                    triggerType = latest.TriggerType,
+                    url = $"/api/admin/captures/{latest.Id}"
+                }
+            });
+        });
+
+        // Admin Get Recent Captures API
+        app.MapGet("/api/admin/captures/recent", (HttpContext ctx) =>
+        {
+            if (!CheckAuth(ctx)) return Results.Unauthorized();
+            var username = ctx.Request.Query["user"].ToString();
+            int.TryParse(ctx.Request.Query["limit"], out var limit);
+            if (limit <= 0) limit = 10;
+
+            if (string.IsNullOrWhiteSpace(username) || username == "all")
+            {
+                var firstRestricted = UserRepository.GetAll().FirstOrDefault(u => u.IsRestricted);
+                if (firstRestricted == null) return Results.Ok(new { captures = Array.Empty<object>() });
+                username = firstRestricted.Username;
+            }
+
+            var user = UserRepository.GetByUsername(username);
+            if (user == null) return Results.NotFound();
+
+            var recent = ScreenCaptureRepository.GetRecentByUser(user.Id, limit);
+            var list = recent.Select(r => new
+            {
+                id = r.Id,
+                userId = r.UserId,
+                username = user.Username,
+                timestamp = r.Timestamp.ToString("HH:mm:ss"),
+                date = r.Timestamp.ToString("yyyy-MM-dd"),
+                width = r.Width,
+                height = r.Height,
+                fileSizeBytes = r.FileSizeBytes,
+                triggerType = r.TriggerType,
+                url = $"/api/admin/captures/{r.Id}"
+            }).ToList();
+
+            return Results.Ok(new { captures = list });
+        });
+
+        // Admin Serve Capture JPEG Image
+        app.MapGet("/api/admin/captures/{id:int}", (HttpContext ctx, int id) =>
+        {
+            if (!CheckAuth(ctx)) return Results.Unauthorized();
+
+            var record = ScreenCaptureRepository.GetById(id);
+            if (record == null || !File.Exists(record.FilePath))
+            {
+                return Results.NotFound();
+            }
+
+            return Results.File(record.FilePath, "image/jpeg");
+        });
+
+        // Admin Push Capture to Telegram
+        app.MapPost("/api/admin/capture/telegram", async (HttpContext ctx) =>
+        {
+            if (!CheckAuth(ctx)) return Results.Unauthorized();
+
+            int.TryParse(ctx.Request.Query["id"], out var id);
+            var record = ScreenCaptureRepository.GetById(id);
+            if (record == null || !File.Exists(record.FilePath))
+            {
+                return Results.NotFound(new { error = "Tangkapan layar tidak ditemukan." });
+            }
+
+            var chatId = SettingsRepository.Get(SettingsRepository.KeyTelegramChatId);
+            if (string.IsNullOrWhiteSpace(chatId))
+            {
+                return Results.BadRequest(new { error = "Telegram Chat ID belum dikonfigurasi di Settings." });
+            }
+
+            var user = UserRepository.GetAll().FirstOrDefault(u => u.Id == record.UserId);
+            var photoBytes = await File.ReadAllBytesAsync(record.FilePath);
+            var caption = $"📸 *Tangkapan Layar Desktop* ({user?.Username ?? "User"})\n⏰ Waktu: `{record.Timestamp:yyyy-MM-dd HH:mm:ss}`\n📏 Resolusi: {record.Width}x{record.Height}\n🏷️ Trigger: {record.TriggerType}";
+
+            var success = await _telegramBotService.SendPhotoAsync(chatId, photoBytes, caption);
+            return Results.Ok(new { success });
+        });
+
         _logger.Information("Starting embedded WebServer on http://0.0.0.0:5050");
         await app.RunAsync(stoppingToken);
     }
@@ -678,4 +977,51 @@ public sealed class WebServerHost : BackgroundService
         }
         return false;
     }
+
+    private async Task<ScreenCaptureRecord?> TriggerCaptureAndWaitAsync(string username, string trigger, int timeoutSeconds = 15)
+    {
+        var user = UserRepository.GetByUsername(username);
+        if (user == null) return null;
+
+        var session = _sessionTracker.ActiveSessions.Values.FirstOrDefault(s => s.UserSid == user.Sid);
+        if (session == null || session.IsLocked) return null;
+
+        var tcs = new TaskCompletionSource<ScreenCaptureRecord>(TaskCreationOptions.RunContinuationsAsynchronously);
+        void Handler(ScreenCaptureRecord record)
+        {
+            if (record.UserId == user.Id)
+            {
+                tcs.TrySetResult(record);
+            }
+        }
+
+        OnCaptureReceived += Handler;
+        try
+        {
+            var state = _captureStates.GetOrAdd(user.Username, _ => new CaptureCommandState());
+            state.CaptureRequested = true;
+            state.Trigger = trigger;
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(timeoutSeconds));
+            cts.Token.Register(() => tcs.TrySetCanceled());
+
+            return await tcs.Task;
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            OnCaptureReceived -= Handler;
+        }
+    }
+
+public sealed class CaptureCommandState
+{
+    public bool CaptureRequested { get; set; }
+    public bool WatchMode { get; set; }
+    public DateTime WatchExpiresAt { get; set; }
+    public string Trigger { get; set; } = "MANUAL";
+}
 }

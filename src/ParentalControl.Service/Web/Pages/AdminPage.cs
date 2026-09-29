@@ -114,6 +114,10 @@ public static class AdminPage
                 .progress-track { height: 6px; background: #0b1120; border-radius: 3px; overflow: hidden; margin-top: 4px; width: 100%; border: 1px solid #1e293b; }
                 .progress-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
 
+
+                /* Screen Capture styles */
+                .cap-thumb { width: 96px; height: 54px; object-fit: cover; border-radius: 4px; border: 2px solid #334155; cursor: pointer; transition: all 0.2s; flex-shrink: 0; opacity: 0.75; }
+                .cap-thumb:hover, .cap-thumb.active { border-color: #38bdf8; opacity: 1; transform: scale(1.03); }
                 /* Modal styles */
                 .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(4px); z-index: 999; align-items: center; justify-content: center; }
                 .modal-box { background: #131c2e; border: 1px solid #334155; border-radius: 0.85rem; padding: 1.75rem; max-width: 420px; width: 90%; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.8); }
@@ -139,6 +143,46 @@ public static class AdminPage
                 <div class="card">
                     <h2>🎮 Pending Grace Requests</h2>
                     <div id="requestsContainer">Loading requests...</div>
+                </div>
+            </div>
+
+            <!-- ═══ LIVE SCREEN SUPERVISION CARD ═══ -->
+            <div class="card" style="margin-bottom: 2rem;">
+                <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem;margin-bottom:1rem">
+                    <div style="display:flex;align-items:center;gap:0.75rem">
+                        <h2>📸 Live Desktop Screen Supervision</h2>
+                        <span id="watchBadge" class="badge" style="display:none;background:#15803d;color:#dcfce7;animation:pulse 2s infinite">● Watch Mode Active (10s)</span>
+                    </div>
+                    <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+                        <button class="btn btn-primary" id="btnSnapScreen" onclick="captureCurrentScreen()">📸 Capture Now</button>
+                        <button class="btn btn-secondary" id="btnToggleWatch" onclick="toggleWatchMode()">🎥 Watch Mode (10s)</button>
+                        <button class="btn btn-secondary" id="btnSendTelegram" onclick="sendCurrentCaptureToTelegram()">📱 Send to Telegram</button>
+                    </div>
+                </div>
+
+                <div id="captureContainer" style="display:flex;flex-direction:column;gap:1rem">
+                    <!-- Main Viewport -->
+                    <div style="position:relative;background:#090d16;border:1px solid #1e293b;border-radius:0.65rem;min-height:260px;display:flex;align-items:center;justify-content:center;overflow:hidden">
+                        <img id="captureImg" src="" alt="Screen Capture" style="display:none;max-width:100%;max-height:460px;object-fit:contain;cursor:zoom-in;border-radius:0.4rem" onclick="openCaptureLightbox()" />
+                        <div id="capturePlaceholder" style="color:#64748b;font-size:0.875rem;padding:2.5rem 1rem;text-align:center">
+                            No recent screen capture loaded. Click <strong>📸 Capture Now</strong> or enable <strong>🎥 Watch Mode</strong>.
+                        </div>
+                        <div id="captureMetaBar" style="display:none;position:absolute;bottom:0;left:0;right:0;background:rgba(9, 13, 22, 0.85);backdrop-filter:blur(4px);padding:0.45rem 0.85rem;font-size:0.75rem;color:#cbd5e1;display:flex;justify-content:space-between;align-items:center">
+                            <span id="captureMetaUserTime"></span>
+                            <span id="captureMetaDetails" style="color:#94a3b8"></span>
+                        </div>
+                    </div>
+
+                    <!-- Recent Thumbnails Strip -->
+                    <div>
+                        <div style="font-size:0.8rem;color:#94a3b8;margin-bottom:0.4rem;display:flex;justify-content:space-between">
+                            <span>Recent Captures Today</span>
+                            <span id="captureCountBadge" style="color:#64748b">0 captures</span>
+                        </div>
+                        <div id="captureThumbnails" style="display:flex;gap:0.6rem;overflow-x:auto;padding-bottom:0.5rem;align-items:center">
+                            <span style="font-size:0.75rem;color:#64748b;font-style:italic">No captures yet</span>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -225,6 +269,14 @@ public static class AdminPage
                 </div>
             </div>
 
+            <!-- ═══ CAPTURE LIGHTBOX MODAL ═══ -->
+            <div id="lightboxModal" class="modal-backdrop" onclick="closeCaptureLightbox()">
+                <div style="position:relative;max-width:94vw;max-height:94vh;display:flex;align-items:center;justify-content:center" onclick="event.stopPropagation()">
+                    <img id="lightboxImg" src="" style="max-width:100%;max-height:92vh;border-radius:0.5rem;box-shadow:0 25px 50px -12px rgba(0,0,0,0.9);border:1px solid #334155" />
+                    <button style="position:absolute;top:-12px;right:-12px;background:#dc2626;color:white;border:none;border-radius:50%;width:32px;height:32px;font-weight:bold;cursor:pointer;font-size:1rem;display:flex;align-items:center;justify-content:center" onclick="closeCaptureLightbox()">✕</button>
+                </div>
+            </div>
+
             <script>
                 const COLOR_PALETTE = [
                     '#38bdf8', '#818cf8', '#34d399', '#f472b6', '#fbbf24',
@@ -238,6 +290,12 @@ public static class AdminPage
                 };
 
                 let targetLockSessionId = null;
+                let currentCaptureId = null;
+                let currentCaptureUrl = null;
+                let watchModeActive = false;
+                let watchIntervalId = null;
+                let watchHeartbeatId = null;
+                let activeSessionUsernames = [];
 
                 function getTodayIsoString() {
                     const d = new Date();
@@ -264,6 +322,7 @@ public static class AdminPage
                         renderUserPills(data.availableUsers, data.selectedUser);
                         renderTimeline(data.hourlyTimeline, data.selectedDate, data.selectedRange);
                         renderAppUsage(data.appUsage, data.totalMinutes);
+                        loadLatestCapture();
                     } catch (e) {
                         console.error('Error loading dashboard:', e);
                     }
@@ -275,6 +334,7 @@ public static class AdminPage
                         c.innerHTML = '<div class="empty">No active sessions right now.</div>';
                         return;
                     }
+                    activeSessionUsernames = sessions.filter(s => s.isRestricted && !s.isLocked).map(s => s.username);
                     let html = '<table><thead><tr><th>User</th><th>Current Activity</th><th>Remaining</th><th>Curfew</th><th>Quick Actions</th></tr></thead><tbody>';
                     for (const s of sessions) {
                         const liveIndicator = s.isAppLive
@@ -311,11 +371,11 @@ public static class AdminPage
                                 <td>${s.curfew}</td>
                                 <td>
                                     <div style="display:flex;gap:0.35rem;flex-wrap:wrap">
+                                        <button class="btn btn-primary" style="padding:0.25rem 0.5rem" onclick="captureSessionScreen('${s.username}')">📸 Screen</button>
                                         <button class="btn btn-warning" style="padding:0.25rem 0.5rem" onclick="openLockModal(${s.sessionId}, '${s.username}')">🔒 Lock</button>
                                         <button class="btn btn-success" style="padding:0.25rem 0.5rem" onclick="grantTime(${s.userId}, 15)">+15m</button>
                                         <button class="btn btn-success" style="padding:0.25rem 0.5rem" onclick="grantTime(${s.userId}, 30)">+30m</button>
                                         <button class="btn btn-danger" style="padding:0.25rem 0.5rem" onclick="forceLogoff(${s.sessionId})">Logoff</button>
-                                    </div>
                                 </td>
                             </tr>`;
                         }
@@ -538,6 +598,204 @@ public static class AdminPage
                         body: JSON.stringify({ requestId, action, minutes })
                     });
                     loadDashboard();
+                }
+
+                async function captureSessionScreen(username) {
+                    const btn = document.getElementById('btnSnapScreen');
+                    if (btn) btn.textContent = '⏳ Snapping...';
+                    try {
+                        const res = await fetch('/api/admin/capture/request', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ username, mode: 'single' })
+                        });
+                        const data = await res.json();
+                        if (!res.ok) {
+                            alert(data.error || 'Failed to request screen capture.');
+                            return;
+                        }
+                        setTimeout(loadLatestCapture, 2000);
+                        setTimeout(loadLatestCapture, 4500);
+                        setTimeout(loadLatestCapture, 7000);
+                    } catch (e) {
+                        console.error('Error requesting capture:', e);
+                    } finally {
+                        if (btn) btn.textContent = '📸 Capture Now';
+                    }
+                }
+
+                function captureCurrentScreen() {
+                    let target = currentFilter.user;
+                    if (!target || target === 'all') {
+                        target = activeSessionUsernames.length > 0 ? activeSessionUsernames[0] : '';
+                    }
+                    if (!target) {
+                        alert('No active restricted user found to capture.');
+                        return;
+                    }
+                    captureSessionScreen(target);
+                }
+
+                async function toggleWatchMode() {
+                    let target = currentFilter.user;
+                    if (!target || target === 'all') {
+                        target = activeSessionUsernames.length > 0 ? activeSessionUsernames[0] : '';
+                    }
+                    if (!target) {
+                        alert('No active restricted user found for watch mode.');
+                        return;
+                    }
+
+                    watchModeActive = !watchModeActive;
+                    const badge = document.getElementById('watchBadge');
+                    const btn = document.getElementById('btnToggleWatch');
+
+                    if (watchModeActive) {
+                        btn.classList.remove('btn-secondary');
+                        btn.classList.add('btn-danger');
+                        btn.textContent = '⏹ Stop Watch';
+                        if (badge) badge.style.display = 'inline-flex';
+
+                        await fetch('/api/admin/capture/request', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ username: target, mode: 'watch', enableWatch: true })
+                        });
+
+                        loadLatestCapture();
+                        watchIntervalId = setInterval(loadLatestCapture, 10000);
+                        watchHeartbeatId = setInterval(() => {
+                            fetch(`/api/admin/capture/heartbeat?user=${encodeURIComponent(target)}`, { method: 'POST' });
+                        }, 60000);
+                    } else {
+                        btn.classList.remove('btn-danger');
+                        btn.classList.add('btn-secondary');
+                        btn.textContent = '🎥 Watch Mode (10s)';
+                        if (badge) badge.style.display = 'none';
+
+                        if (watchIntervalId) clearInterval(watchIntervalId);
+                        if (watchHeartbeatId) clearInterval(watchHeartbeatId);
+
+                        await fetch('/api/admin/capture/request', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ username: target, mode: 'watch', enableWatch: false })
+                        });
+                    }
+                }
+
+                async function loadLatestCapture() {
+                    let target = currentFilter.user;
+                    if (!target || target === 'all') {
+                        target = activeSessionUsernames.length > 0 ? activeSessionUsernames[0] : 'all';
+                    }
+
+                    try {
+                        const res = await fetch(`/api/admin/captures/latest?user=${encodeURIComponent(target)}`);
+                        if (res.status === 401) return;
+                        const data = await res.json();
+
+                        const img = document.getElementById('captureImg');
+                        const ph = document.getElementById('capturePlaceholder');
+                        const bar = document.getElementById('captureMetaBar');
+                        const metaUserTime = document.getElementById('captureMetaUserTime');
+                        const metaDetails = document.getElementById('captureMetaDetails');
+
+                        if (data && data.capture) {
+                            const c = data.capture;
+                            currentCaptureId = c.id;
+                            currentCaptureUrl = c.url;
+
+                            img.src = `${c.url}?t=${Date.now()}`;
+                            img.style.display = 'block';
+                            ph.style.display = 'none';
+                            bar.style.display = 'flex';
+
+                            metaUserTime.innerHTML = `<strong>👤 ${c.username}</strong> &bull; ⏰ ${c.timestamp}`;
+                            const kb = Math.round(c.fileSizeBytes / 1024);
+                            metaDetails.textContent = `${c.width}×${c.height} • ${kb} KB • ${c.triggerType}`;
+                        }
+                        loadRecentCaptures(target);
+                    } catch (e) {
+                        console.error('Error loading latest capture:', e);
+                    }
+                }
+
+                async function loadRecentCaptures(targetUser) {
+                    try {
+                        const res = await fetch(`/api/admin/captures/recent?user=${encodeURIComponent(targetUser || currentFilter.user)}&limit=10`);
+                        if (res.status === 401) return;
+                        const data = await res.json();
+
+                        const strip = document.getElementById('captureThumbnails');
+                        const countBadge = document.getElementById('captureCountBadge');
+                        if (!strip) return;
+
+                        if (!data.captures || data.captures.length === 0) {
+                            strip.innerHTML = '<span style="font-size:0.75rem;color:#64748b;font-style:italic">No captures yet</span>';
+                            if (countBadge) countBadge.textContent = '0 captures';
+                            return;
+                        }
+
+                        if (countBadge) countBadge.textContent = `${data.captures.length} recent`;
+
+                        let html = '';
+                        for (const item of data.captures) {
+                            const isActive = item.id === currentCaptureId ? 'active' : '';
+                            html += `
+                                <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+                                    <img src="${item.url}" class="cap-thumb ${isActive}" title="${item.username} @ ${item.timestamp} (${item.width}x${item.height})" onclick="selectCapture(${item.id}, '${item.url}', '${item.username} &bull; ⏰ ${item.timestamp}', '${item.width}×${item.height} • ${Math.round(item.fileSizeBytes/1024)} KB')" />
+                                    <span style="font-size:0.65rem;color:#64748b">${item.timestamp}</span>
+                                </div>`;
+                        }
+                        strip.innerHTML = html;
+                    } catch (e) {
+                        console.error('Error loading recent captures:', e);
+                    }
+                }
+
+                function selectCapture(id, url, userTime, details) {
+                    currentCaptureId = id;
+                    currentCaptureUrl = url;
+                    const img = document.getElementById('captureImg');
+                    img.src = `${url}?t=${Date.now()}`;
+                    document.getElementById('captureMetaUserTime').innerHTML = userTime;
+                    document.getElementById('captureMetaDetails').textContent = details;
+
+                    // Update active thumbnail border
+                    document.querySelectorAll('.cap-thumb').forEach(el => el.classList.remove('active'));
+                }
+
+                function openCaptureLightbox() {
+                    if (!currentCaptureUrl) return;
+                    document.getElementById('lightboxImg').src = currentCaptureUrl;
+                    document.getElementById('lightboxModal').style.display = 'flex';
+                }
+
+                function closeCaptureLightbox() {
+                    document.getElementById('lightboxModal').style.display = 'none';
+                }
+
+                async function sendCurrentCaptureToTelegram() {
+                    if (!currentCaptureId) {
+                        alert('No screen capture loaded to send.');
+                        return;
+                    }
+                    const btn = document.getElementById('btnSendTelegram');
+                    btn.textContent = '⏳ Sending...';
+                    try {
+                        const res = await fetch(`/api/admin/capture/telegram?id=${currentCaptureId}`, { method: 'POST' });
+                        const data = await res.json();
+                        if (res.ok && data.success) {
+                            alert('📸 Screen capture successfully sent to Telegram!');
+                        } else {
+                            alert(data.error || 'Failed to send capture to Telegram. Ensure Telegram Bot token and Chat ID are configured.');
+                        }
+                    } catch (e) {
+                        console.error('Error sending capture to Telegram:', e);
+                    } finally {
+                        btn.textContent = '📱 Send to Telegram';
+                    }
                 }
 
                 // Initial load and periodic polling every 10s

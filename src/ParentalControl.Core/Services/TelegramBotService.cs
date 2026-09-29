@@ -17,6 +17,9 @@ public sealed class TelegramBotService
     private readonly Serilog.ILogger _logger;
     private long _lastUpdateId = 0;
 
+    public static Func<string, Task<ScreenCaptureRecord?>>? OnCaptureRequested { get; set; }
+    public static Func<Task<string>>? OnStatusRequested { get; set; }
+
     public TelegramBotService(Serilog.ILogger logger)
     {
         _logger = logger;
@@ -53,17 +56,34 @@ public sealed class TelegramBotService
                  + $"*Reason:* _{EscapeMarkdown(request.Reason)}_\n"
                  + $"*Submitted:* {request.CreatedAt:HH:mm:ss}";
 
+        var approveMinutes = new SortedSet<int>(Comparer<int>.Create((a, b) => b.CompareTo(a)));
+        approveMinutes.Add(request.RequestedMinutes);
+        if (request.RequestedMinutes > 60) approveMinutes.Add(60);
+        if (request.RequestedMinutes > 30) approveMinutes.Add(30);
+        if (request.RequestedMinutes > 15) approveMinutes.Add(15);
+
+        var allButtons = approveMinutes
+            .Select(m => (object)new { text = $"✅ Approve {m}m", callback_data = $"approve:{request.Id}:{m}" })
+            .ToList();
+        allButtons.Add(new { text = "❌ Decline", callback_data = $"decline:{request.Id}:0" });
+
+        object[][] buttonRows;
+        if (allButtons.Count <= 3)
+        {
+            buttonRows = new[] { allButtons.ToArray() };
+        }
+        else
+        {
+            buttonRows = allButtons
+                .Select((btn, idx) => new { btn, idx })
+                .GroupBy(x => x.idx / 2)
+                .Select(g => g.Select(x => x.btn).ToArray())
+                .ToArray();
+        }
+
         var inlineKeyboard = new
         {
-            inline_keyboard = new[]
-            {
-                new[]
-                {
-                    new { text = "✅ Approve 15m", callback_data = $"approve:{request.Id}:15" },
-                    new { text = "✅ Approve 30m", callback_data = $"approve:{request.Id}:30" },
-                    new { text = "❌ Decline", callback_data = $"decline:{request.Id}:0" }
-                }
-            }
+            inline_keyboard = buttonRows
         };
 
         var payload = new
@@ -131,6 +151,12 @@ public sealed class TelegramBotService
                         if (callbackQuery != null)
                         {
                             await HandleCallbackQueryAsync(token, configuredChatId, callbackQuery);
+                        }
+
+                        var message = item?["message"];
+                        if (message != null)
+                        {
+                            await HandleMessageAsync(token, configuredChatId, message);
                         }
                     }
                 }
@@ -266,6 +292,117 @@ public sealed class TelegramBotService
             await HttpClient.PostAsync(url, content);
         }
         catch { }
+    }
+
+    private async Task HandleMessageAsync(string botToken, string configuredChatId, JsonNode message)
+    {
+        var chatId = message?["chat"]?["id"]?.ToString() ?? "";
+        if (chatId != configuredChatId) return;
+
+        var text = message?["text"]?.ToString()?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(text)) return;
+
+        if (text.StartsWith("/capture", StringComparison.OrdinalIgnoreCase))
+        {
+            var parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var userArg = parts.Length > 1 ? parts[1].Trim() : "";
+
+            if (OnCaptureRequested == null)
+            {
+                await SendTextMessageAsync(chatId, "⚠️ Layanan tangkapan layar belum siap.");
+                return;
+            }
+
+            await SendTextMessageAsync(chatId, $"📸 Meminta tangkapan layar desktop untuk {(string.IsNullOrEmpty(userArg) ? "pengguna aktif" : userArg)}...");
+            var record = await OnCaptureRequested(userArg);
+            if (record != null && File.Exists(record.FilePath))
+            {
+                try
+                {
+                    var photoBytes = await File.ReadAllBytesAsync(record.FilePath);
+                    var caption = $"📸 *Tangkapan Layar Desktop*\n⏰ Waktu: `{record.Timestamp:yyyy-MM-dd HH:mm:ss}`\n📏 Resolusi: {record.Width}x{record.Height}\n🏷️ Trigger: {record.TriggerType}";
+                    await SendPhotoAsync(chatId, photoBytes, caption);
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error(ex, "Gagal membaca atau mengirim foto tangkapan layar");
+                    await SendTextMessageAsync(chatId, "❌ Gagal mengirim gambar tangkapan layar.");
+                }
+            }
+            else
+            {
+                await SendTextMessageAsync(chatId, "❌ Gagal mengambil tangkapan layar. Pastikan pengguna sedang aktif dan sesi tidak sedang terkunci.");
+            }
+        }
+        else if (text.StartsWith("/status", StringComparison.OrdinalIgnoreCase))
+        {
+            if (OnStatusRequested != null)
+            {
+                var statusText = await OnStatusRequested();
+                await SendTextMessageAsync(chatId, statusText);
+            }
+        }
+        else if (text.StartsWith("/help", StringComparison.OrdinalIgnoreCase) || text.StartsWith("/start", StringComparison.OrdinalIgnoreCase))
+        {
+            var helpMsg = "🛡️ *Parental Control Admin Bot*\n\n"
+                        + "Perintah yang tersedia:\n"
+                        + "• `/capture [user]` — Ambil tangkapan layar desktop diam-diam\n"
+                        + "• `/status` — Cek sisa screen time dan aplikasi aktif anak\n"
+                        + "• `/help` — Tampilkan bantuan ini";
+            await SendTextMessageAsync(chatId, helpMsg);
+        }
+    }
+
+    public async Task<bool> SendPhotoAsync(string chatId, byte[] photoBytes, string caption)
+    {
+        var token = SettingsRepository.Get(SettingsRepository.KeyTelegramBotToken);
+        if (string.IsNullOrWhiteSpace(token)) return false;
+
+        try
+        {
+            var url = $"https://api.telegram.org/bot{token}/sendPhoto";
+            using var form = new MultipartFormDataContent();
+            form.Add(new StringContent(chatId), "chat_id");
+            form.Add(new StringContent(caption), "caption");
+            form.Add(new StringContent("Markdown"), "parse_mode");
+
+            var fileContent = new ByteArrayContent(photoBytes);
+            fileContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+            form.Add(fileContent, "photo", "screenshot.jpg");
+
+            var response = await HttpClient.PostAsync(url, form);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Failed to send Telegram photo");
+            return false;
+        }
+    }
+
+    public async Task<bool> SendTextMessageAsync(string chatId, string text)
+    {
+        var token = SettingsRepository.Get(SettingsRepository.KeyTelegramBotToken);
+        if (string.IsNullOrWhiteSpace(token)) return false;
+
+        try
+        {
+            var url = $"https://api.telegram.org/bot{token}/sendMessage";
+            var payload = new
+            {
+                chat_id = chatId,
+                text = text,
+                parse_mode = "Markdown"
+            };
+            using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+            var response = await HttpClient.PostAsync(url, content);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Failed to send Telegram text message");
+            return false;
+        }
     }
 
     private static string EscapeMarkdown(string text)

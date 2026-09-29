@@ -11,7 +11,9 @@ public sealed record AgentStatusResponse(
     bool isRestricted,
     int remainingSeconds,
     string? curfew,
-    bool isLocked);
+    bool isLocked,
+    bool captureRequested = false,
+    int watchIntervalSeconds = 0);
 
 public sealed class AgentController : IDisposable
 {
@@ -21,6 +23,8 @@ public sealed class AgentController : IDisposable
     private readonly DispatcherTimer _activityTimer;
     private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(3) };
     private readonly WidgetWindow _widgetWindow;
+    private DispatcherTimer? _watchTimer;
+    private int _currentWatchInterval;
     private bool _disposed;
 
     public AgentController(System.Windows.Application app)
@@ -143,10 +147,59 @@ public sealed class AgentController : IDisposable
 
             if (tooltip.Length > 63) tooltip = tooltip.Substring(0, 63);
             _notifyIcon.Text = tooltip;
+            // Check for capture command from service
+            if (status.captureRequested)
+            {
+                _ = CaptureAndUploadAsync("MANUAL");
+            }
+
+            // Manage Watch Mode timer
+            if (status.watchIntervalSeconds > 0)
+            {
+                if (_watchTimer == null || _currentWatchInterval != status.watchIntervalSeconds)
+                {
+                    _watchTimer?.Stop();
+                    _currentWatchInterval = status.watchIntervalSeconds;
+                    _watchTimer = new DispatcherTimer
+                    {
+                        Interval = TimeSpan.FromSeconds(_currentWatchInterval)
+                    };
+                    _watchTimer.Tick += async (s, e) => await CaptureAndUploadAsync("WATCH");
+                    _watchTimer.Start();
+                }
+            }
+            else if (_watchTimer != null)
+            {
+                _watchTimer.Stop();
+                _watchTimer = null;
+                _currentWatchInterval = 0;
+            }
         }
         catch
         {
             // If service temporarily down or restarting, do not crash or block
+        }
+    }
+
+    private async Task CaptureAndUploadAsync(string trigger)
+    {
+        try
+        {
+            var bytes = ScreenCaptureHelper.CaptureScreenJpeg(1920, 70L, out var width, out var height);
+            if (bytes == null || bytes.Length == 0) return;
+
+            using var content = new ByteArrayContent(bytes);
+            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+            content.Headers.Add("X-User", Environment.UserName);
+            content.Headers.Add("X-Trigger", trigger);
+            content.Headers.Add("X-Width", width.ToString());
+            content.Headers.Add("X-Height", height.ToString());
+
+            await _httpClient.PostAsync("http://127.0.0.1:5050/api/agent/capture", content);
+        }
+        catch
+        {
+            // Silent capture failure; do not alert or disturb restricted user
         }
     }
 
@@ -157,6 +210,7 @@ public sealed class AgentController : IDisposable
 
         _statusTimer?.Stop();
         _activityTimer?.Stop();
+        _watchTimer?.Stop();
         _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
         _httpClient.Dispose();

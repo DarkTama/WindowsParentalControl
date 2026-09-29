@@ -84,6 +84,7 @@ public static class UserRepository
         using var cmd = connection.CreateCommand();
         cmd.Transaction = transaction;
         cmd.CommandText = """
+            DELETE FROM screen_captures WHERE user_id = @id;
             DELETE FROM schedule_days WHERE user_id = @id;
             DELETE FROM grace_requests WHERE user_id = @id;
             DELETE FROM app_usage WHERE user_id = @id;
@@ -95,6 +96,16 @@ public static class UserRepository
         cmd.Parameters.AddWithValue("@id", user.Id);
         cmd.ExecuteNonQuery();
         transaction.Commit();
+
+        try
+        {
+            var userCapturesDir = Path.Combine(DatabaseManager.CapturesDirectory, user.Id.ToString());
+            if (Directory.Exists(userCapturesDir))
+            {
+                Directory.Delete(userCapturesDir, true);
+            }
+        }
+        catch { }
     }
 
     private static User ReadUser(SqliteDataReader reader)

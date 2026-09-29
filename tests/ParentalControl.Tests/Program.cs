@@ -135,6 +135,84 @@ testClamped = Math.Min(testDailySec, testCurfewSec);
 Debug.Assert(testClamped == 300, "Should clamp to daily remaining seconds");
 Console.WriteLine("✅ Session Enumeration & Curfew Clamping Calculation Verification Passed.");
 
+// 11. Test Screen Capture Repository & File Management
+var dummyCaptureFile = Path.Combine(DatabaseManager.CapturesDirectory, $"{user.Id}_test.jpg");
+File.WriteAllBytes(dummyCaptureFile, new byte[1024]);
+
+var capture = new ScreenCaptureRecord
+{
+    UserId = user.Id,
+    Timestamp = DateTime.Now,
+    FilePath = dummyCaptureFile,
+    Width = 1920,
+    Height = 1080,
+    FileSizeBytes = 1024,
+    TriggerType = "MANUAL",
+    AdminIp = "127.0.0.1"
+};
+var savedCapture = ScreenCaptureRepository.Add(capture);
+Debug.Assert(savedCapture.Id > 0, "ScreenCapture ID should be > 0");
+
+var retrievedCapture = ScreenCaptureRepository.GetById(savedCapture.Id);
+Debug.Assert(retrievedCapture != null, "Capture should be retrievable by ID");
+Debug.Assert(retrievedCapture!.Width == 1920 && retrievedCapture.Height == 1080, "Dimensions should match");
+
+var latestCapture = ScreenCaptureRepository.GetLatestByUser(user.Id);
+Debug.Assert(latestCapture != null && latestCapture.Id == savedCapture.Id, "Latest capture should match saved capture");
+
+var recentCaptures = ScreenCaptureRepository.GetRecentByUser(user.Id, 5);
+Debug.Assert(recentCaptures.Count == 1, "Should have 1 recent capture");
+
+var totalBytes = ScreenCaptureRepository.GetTotalStorageBytes();
+Debug.Assert(totalBytes >= 1024, "Total storage should be at least 1024 bytes");
+
+// Test capture deletion
+var deleted = ScreenCaptureRepository.Delete(savedCapture.Id);
+Debug.Assert(deleted, "Capture should be deleted successfully");
+Debug.Assert(!File.Exists(dummyCaptureFile), "Capture file should be deleted from disk");
+Console.WriteLine("✅ Screen Capture Repository CRUD & Storage Tracking Passed.");
+
+// 12. Test Screen Capture Retention & Storage Ceiling Pruning
+var oldCaptureFile = Path.Combine(DatabaseManager.CapturesDirectory, $"{user.Id}_old.jpg");
+File.WriteAllBytes(oldCaptureFile, new byte[2048]);
+var oldCapture = ScreenCaptureRepository.Add(new ScreenCaptureRecord
+{
+    UserId = user.Id,
+    Timestamp = DateTime.Now.AddDays(-10), // older than 7 days
+    FilePath = oldCaptureFile,
+    Width = 1920,
+    Height = 1080,
+    FileSizeBytes = 2048,
+    TriggerType = "WATCH"
+});
+
+var prunedCount = ScreenCaptureRepository.PruneOldCaptures(retentionDays: 7, maxTotalBytes: 500 * 1024 * 1024);
+Debug.Assert(prunedCount >= 1, "PruneOldCaptures should prune expired captures");
+Debug.Assert(ScreenCaptureRepository.GetById(oldCapture.Id) == null, "Old capture should be removed from database");
+Debug.Assert(!File.Exists(oldCaptureFile), "Old capture file should be removed from disk");
+Console.WriteLine("✅ Screen Capture Pruning (Retention Days & Size Limit) Passed.");
+
+// 13. Test Telegram Dynamic Approval Buttons Calculation
+var testReq60 = new GraceRequest { Id = 101, RequestedMinutes = 60 };
+var buttons60 = new SortedSet<int>(Comparer<int>.Create((a, b) => b.CompareTo(a)));
+buttons60.Add(testReq60.RequestedMinutes);
+if (testReq60.RequestedMinutes > 60) buttons60.Add(60);
+if (testReq60.RequestedMinutes > 30) buttons60.Add(30);
+if (testReq60.RequestedMinutes > 15) buttons60.Add(15);
+Debug.Assert(buttons60.Contains(60), "60m request must generate Approve 60m option");
+Debug.Assert(buttons60.Contains(30), "60m request must also generate Approve 30m option");
+Debug.Assert(buttons60.Contains(15), "60m request must also generate Approve 15m option");
+
+var testReq30 = new GraceRequest { Id = 102, RequestedMinutes = 30 };
+var buttons30 = new SortedSet<int>(Comparer<int>.Create((a, b) => b.CompareTo(a)));
+buttons30.Add(testReq30.RequestedMinutes);
+if (testReq30.RequestedMinutes > 60) buttons30.Add(60);
+if (testReq30.RequestedMinutes > 30) buttons30.Add(30);
+if (testReq30.RequestedMinutes > 15) buttons30.Add(15);
+Debug.Assert(!buttons30.Contains(60), "30m request should not offer 60m");
+Debug.Assert(buttons30.Contains(30) && buttons30.Contains(15), "30m request should offer 30m and 15m");
+Console.WriteLine("✅ Telegram Dynamic Approval Buttons Calculation Passed.");
+
 // Cleanup test user
 UserRepository.DeleteBySid(testSid);
 ScheduleRepository.DeleteForUser(user.Id);

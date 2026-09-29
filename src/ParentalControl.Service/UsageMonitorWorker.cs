@@ -169,11 +169,11 @@ public sealed class UsageMonitorWorker : BackgroundService
         var eventsDeleted = EventRepository.DeleteOlderThan(eventsCutoff);
         var usageDeleted = UsageRepository.DeleteOlderThan(usageCutoff);
         var appUsageDeleted = AppUsageRepository.DeleteOlderThan(usageCutoff);
-
+        var capturesDeleted = ScreenCaptureRepository.PruneOldCaptures(DatabaseManager.CapturesRetentionDays, DatabaseManager.MaxCapturesStorageBytes);
         if (eventsDeleted > 0 || usageDeleted > 0 || appUsageDeleted > 0)
         {
-            _logger.Information("Database cleanup: deleted {EventsDeleted} events, {UsageDeleted} usage records, {AppUsageDeleted} app records older than {Days} days",
-                eventsDeleted, usageDeleted, appUsageDeleted, DatabaseManager.RetentionDays);
+            _logger.Information("Database cleanup: deleted {EventsDeleted} events, {UsageDeleted} usage records, {AppUsageDeleted} app records, {CapturesDeleted} captures",
+                eventsDeleted, usageDeleted, appUsageDeleted, capturesDeleted);
         }
     }
 }

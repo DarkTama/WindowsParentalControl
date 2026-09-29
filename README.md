@@ -53,6 +53,14 @@ An enhanced screen time, application telemetry, and schedule curfew management s
 - **LocalSystem Agent Auto-Spawner**: Service uses `WTSQueryUserToken`, `DuplicateTokenEx`, and `CreateProcessAsUserW` targeting `winsta0\default` to spawn or revive `ParentalControl.Agent.exe` on service startup, user unlock, and monitor ticks (recovers automatically even if killed via Task Manager or during upgrades).
 - **Non-Destructive Installer Upgrades**: Inno Setup installer stops the service, updates files, and restarts without deleting the service registration, eliminating Windows error 1072 (`ERROR_SERVICE_MARKED_FOR_DELETE`).
 
+### 7. Silent Screen Capture & Web Admin Watch Mode
+- **Completely Silent GDI Capture**: The session agent captures the full virtual desktop (`SystemInformation.VirtualScreen`) covering all monitors in-memory using native GDI without triggering camera sounds, system toasts, clipboard changes, or window flashes.
+- **Single-Shot & 10s Watch Mode**: Admins can capture a single snapshot on-demand or toggle 10-second Watch Mode with live viewport preview, thumbnail strip of recent captures, and full-resolution click-to-zoom lightbox modal.
+- **Guarded Execution**: Rejects capture requests if the user session is locked or disconnected, avoiding blank/black screen storage.
+- **Mobile Telegram Integration**: Capture desktop on-the-go via `/capture [username]`, check real-time status with `/status`, or send any Web Admin capture directly to Telegram with 1 click.
+- **Dynamic Telegram Approval Buttons**: Grace request approval keyboards dynamically scale to match requested minutes (e.g., offering `[Approve 60m]`, `[Approve 30m]`, `[Approve 15m]`, `[Decline]`).
+- **Storage Auto-Pruning**: JPEGs downscaled to 1920px max width (quality 70, ~150–250 KB) stored in `%ProgramData%\ParentalControl\captures\` with automatic rolling pruning (7-day retention + 500 MB hard storage cap).
+
 ---
 
 ## Architecture
@@ -81,7 +89,7 @@ An enhanced screen time, application telemetry, and schedule curfew management s
 +-------------------------------------------------------------------------------+
 | ParentalControl.Core                                                          |
 |  - Database: C:\ProgramData\ParentalControl\data.db (ACL: SYSTEM & Admins)   |
-|  - Repositories: Users, Limits, Schedules, Usage, GraceRequests, AppUsage     |
+|  - Repositories: Users, Limits, Schedules, Usage, GraceRequests, AppUsage, Captures|
 |  - Security: TotpService (RFC 6238 Base32 + QR PNG + constant-time verify)    |
 |  - Platform: SessionManager & NativeMethods (WTSSendMessage, WTSLogoff)       |
 +------------------------------------+------------------------------------------+
@@ -94,8 +102,11 @@ An enhanced screen time, application telemetry, and schedule curfew management s
 | - Dashboard & Events       |       |       | - Floating Acrylic Widget  |
 | - 7-Day Schedule Matrix    |       |       | - Live Tray Countdown      |
 | - Quick Grace Buttons      |       |       | - 1-Click Request Launcher |
-| - Telegram & 2FA Settings  |       |       | - GetForegroundWindow      |
-+----------------------------+       |       |   Telemetry Reporter       |
+|  - Telegram & 2FA Settings  |       | - GetForegroundWindow      |
+|                             |       |   Telemetry Reporter       |
+|                             |       | - Silent Screen Capture    |
+|                             |       |   (All Monitors GDI)       |
++----------------------------+       +----------------------------+
                                      |       +----------------------------+
                                      v
                  +---------------------------------------+
@@ -142,8 +153,10 @@ Expected output:
 ✅ User Discovery by Username & Console Session Detection Passed.
 ✅ Hourly Activity & App Usage Range Verification Passed.
 ✅ Session Enumeration & Curfew Clamping Calculation Verification Passed.
+✅ Screen Capture Repository CRUD & Storage Tracking Passed.
+✅ Screen Capture Pruning (Retention Days & Size Limit) Passed.
+✅ Telegram Dynamic Approval Buttons Calculation Passed.
 ✅ Cleanup Completed.
-
 🎉 ALL ASSERTIONS PASSED SUCCESSFULLY!
 ```
 

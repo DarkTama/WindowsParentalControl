@@ -9,8 +9,11 @@ public static class DatabaseManager
     private static string DataDirectory => Environment.GetEnvironmentVariable("PARENTAL_CONTROL_DATA_DIR") ?? @"C:\ProgramData\ParentalControl";
     private const string DatabaseFileName = "data.db";
     public const int RetentionDays = 30;
+    public const int CapturesRetentionDays = 7;
+    public const long MaxCapturesStorageBytes = 500L * 1024 * 1024; // 500 MB
 
     public static string DatabasePath => Path.Combine(DataDirectory, DatabaseFileName);
+    public static string CapturesDirectory => Path.Combine(DataDirectory, "captures");
 
     public static string ConnectionString => $"Data Source={DatabasePath}";
 
@@ -45,6 +48,11 @@ public static class DatabaseManager
                     // Best-effort ACL for environments without elevation
                 }
             }
+        }
+
+        if (!Directory.Exists(CapturesDirectory))
+        {
+            Directory.CreateDirectory(CapturesDirectory);
         }
 
         using var connection = CreateConnection();
@@ -137,11 +145,25 @@ public static class DatabaseManager
                 details TEXT NOT NULL DEFAULT ''
             );
 
+            CREATE TABLE IF NOT EXISTS screen_captures (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                timestamp TEXT NOT NULL,
+                file_path TEXT NOT NULL,
+                width INTEGER NOT NULL,
+                height INTEGER NOT NULL,
+                file_size_bytes INTEGER NOT NULL,
+                trigger_type TEXT NOT NULL DEFAULT 'MANUAL',
+                admin_ip TEXT,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
             CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events (timestamp);
             CREATE INDEX IF NOT EXISTS idx_events_user_timestamp ON events (user_sid, timestamp);
             CREATE INDEX IF NOT EXISTS idx_grace_user_date ON grace_requests (user_id, date);
             CREATE INDEX IF NOT EXISTS idx_app_usage_user_date ON app_usage (user_id, date);
             CREATE INDEX IF NOT EXISTS idx_app_activity_hourly_date ON app_activity_hourly (user_id, date);
+            CREATE INDEX IF NOT EXISTS idx_screen_captures_user_time ON screen_captures (user_id, timestamp);
             """;
         schemaCmd.ExecuteNonQuery();
 
