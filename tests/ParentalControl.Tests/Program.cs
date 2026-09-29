@@ -262,7 +262,8 @@ var updateCheck = UpdateService.CheckForUpdatesAsync().GetAwaiter().GetResult();
 Debug.Assert(updateCheck.Error == null, $"Error should be null on update check: {updateCheck.Error}");
 Console.WriteLine($"✅ UpdateService CheckForUpdatesAsync Passed (Latest: {updateCheck.LatestVersion}, HasUpdate: {updateCheck.HasUpdate}).");
 
-if (!string.IsNullOrWhiteSpace(updateCheck.DownloadUrl))
+var shouldTestLiveDownload = Environment.GetEnvironmentVariable("TEST_LIVE_DOWNLOAD") == "1";
+if (shouldTestLiveDownload && !string.IsNullOrWhiteSpace(updateCheck.DownloadUrl))
 {
     int lastPct = -1;
     var progress = new Progress<int>(pct => { lastPct = pct; });
@@ -273,6 +274,10 @@ if (!string.IsNullOrWhiteSpace(updateCheck.DownloadUrl))
     Debug.Assert(lastPct == 100, "Progress should reach 100%");
     Console.WriteLine($"✅ UpdateService DownloadUpdateAsync Live Verification Passed ({new FileInfo(downloadedPath!).Length} bytes, 100% progress).");
     try { File.Delete(downloadedPath!); } catch { }
+}
+else
+{
+    Console.WriteLine("ℹ️ UpdateService DownloadUpdateAsync live 137MB download skipped (set TEST_LIVE_DOWNLOAD=1 to run).");
 }
 
 // Cleanup test user
