@@ -124,7 +124,6 @@ public static class AdminPage
                 .cap-thumb { width: 96px; height: 54px; object-fit: cover; border-radius: 4px; border: 2px solid #334155; cursor: pointer; transition: all 0.2s; flex-shrink: 0; opacity: 0.75; }
                 .cap-thumb:hover, .cap-thumb.active { border-color: #38bdf8; opacity: 1; transform: scale(1.03); }
                 /* Modal styles */
-                /* Modal styles */
                 .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); backdrop-filter: blur(4px); z-index: 999; align-items: center; justify-content: center; padding: 0.75rem; }
                 .modal-box { background: #131c2e; border: 1px solid #334155; border-radius: 0.85rem; padding: 1.5rem; max-width: 580px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.8); }
 
@@ -148,6 +147,7 @@ public static class AdminPage
                     .btn-group-responsive { width: 100%; display: flex; gap: 0.35rem; }
                     .btn-group-responsive .btn { flex: 1; text-align: center; justify-content: center; font-size: 0.72rem; padding: 0.4rem 0.2rem; }
                 }
+            </style>
         </head>
         <body>
             <header>
