@@ -153,7 +153,7 @@ public static class RequestPage
                     backdrop-filter: blur(16px);
                     border-radius: 1.25rem;
                     padding: 2.25rem;
-                    max-width: 520px;
+                    max-width: 580px;
                     width: 100%;
                     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7), 0 0 30px rgba(56, 189, 248, 0.1);
                 }
@@ -326,7 +326,6 @@ public static class RequestPage
                     cursor: not-allowed;
                 }
                 #feedback { margin-top: 1rem; display: none; }
-            </style>
                 /* Jadwal Main Card & Grid */
                 .schedule-panel {
                     background: #0f172a;
@@ -360,19 +359,25 @@ public static class RequestPage
                 }
                 .schedule-grid {
                     display: grid;
-                    grid-template-columns: repeat(auto-fit, minmax(88px, 1fr));
-                    gap: 0.5rem;
+                    grid-template-columns: repeat(7, minmax(0, 1fr));
+                    gap: 0.35rem;
+                }
+                @media (max-width: 580px) {
+                    .schedule-grid {
+                        grid-template-columns: repeat(auto-fit, minmax(68px, 1fr));
+                    }
                 }
                 .schedule-day-card {
                     background: #0b1120;
                     border: 1px solid #1e293b;
                     border-radius: 0.5rem;
-                    padding: 0.55rem 0.45rem;
+                    padding: 0.45rem 0.25rem;
                     text-align: center;
                     display: flex;
                     flex-direction: column;
-                    gap: 0.25rem;
+                    gap: 0.2rem;
                     transition: all 0.2s;
+                    min-width: 0;
                 }
                 .schedule-day-card.today-card {
                     border-color: #38bdf8;
@@ -422,10 +427,14 @@ public static class RequestPage
                     font-variant-numeric: tabular-nums;
                 }
                 .day-hours {
-                    font-size: 0.68rem;
+                    font-size: 0.65rem;
                     color: #64748b;
                     font-family: ui-monospace, SFMono-Regular, monospace;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
                 }
+            </style>
         </head>
         <body>
             <div class="card">

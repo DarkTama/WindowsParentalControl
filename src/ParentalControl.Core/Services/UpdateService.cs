@@ -39,6 +39,22 @@ public static class UpdateService
             var response = await HttpClient.GetAsync(url, cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
+                if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
+                {
+                    _logger.Information("No published releases found on GitHub repo {Repo} (404 NotFound).", AppVersion.GitHubRepo);
+                    var clean = currentVerStr.TrimStart('v', 'V').Trim();
+                    return new UpdateCheckResult(
+                        false,
+                        clean,
+                        clean,
+                        "Versi Terbaru",
+                        "Belum ada rilis baru yang dipublikasikan di repositori GitHub.",
+                        null,
+                        null,
+                        null,
+                        Error: null);
+                }
+
                 var err = $"GitHub API returned {response.StatusCode}";
                 _logger.Warning("Update check failed: {Error}", err);
                 return new UpdateCheckResult(false, currentVerStr, currentVerStr, "", "", null, null, null, err);

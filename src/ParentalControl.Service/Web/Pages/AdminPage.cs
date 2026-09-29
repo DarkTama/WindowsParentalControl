@@ -893,12 +893,6 @@ public static class AdminPage
                     }
                 }
 
-                // Initial load and periodic polling every 10s
-                document.getElementById('dateInput').value = currentFilter.date;
-                loadDashboard();
-                setInterval(loadDashboard, 10000);
-            </script>
-
                 function renderManagedUsers(users) {
                     const c = document.getElementById('usersScheduleContainer');
                     if (!users || users.length === 0) {
@@ -1177,6 +1171,12 @@ public static class AdminPage
                         applyBtn.textContent = '⚡ Download & Install Now';
                     }
                 }
+
+                // Initial load and periodic polling every 10s
+                document.getElementById('dateInput').value = currentFilter.date;
+                loadDashboard();
+                setInterval(loadDashboard, 10000);
+            </script>
         </body>
         </html>
         """;

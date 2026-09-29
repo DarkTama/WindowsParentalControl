@@ -257,6 +257,11 @@ Debug.Assert(UpdateService.IsNewerVersion("1.1.0", "1.1.0") == false, "1.1.0 is 
 Debug.Assert(UpdateService.IsNewerVersion("1.0.9", "1.1.0") == false, "1.0.9 is not newer than 1.1.0");
 Console.WriteLine("✅ AppVersion & UpdateService SemVer Comparison Verification Passed.");
 
+var updateCheck = UpdateService.CheckForUpdatesAsync().GetAwaiter().GetResult();
+Debug.Assert(updateCheck.HasUpdate == false, "No update should be pending when no release on GitHub");
+Debug.Assert(updateCheck.Error == null, "Error should be null on 404 (handled gracefully)");
+Console.WriteLine("✅ UpdateService CheckForUpdatesAsync 404 Handled Gracefully.");
+
 // Cleanup test user
 UserRepository.DeleteBySid(testSid);
 ScheduleRepository.DeleteForUser(user.Id);
