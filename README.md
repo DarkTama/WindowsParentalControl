@@ -237,6 +237,15 @@ The installer automatically:
 5. Creates Start Menu and Desktop shortcuts for the Admin UI.
 
 ---
+## Contributing & Issues
+
+Contributions, suggestions, and issue reports are welcome!
+
+- **Bug Reports**: Open a [Bug Report](https://github.com/DarkTama/WindowsParentalControl/issues/new?template=bug_report.yml) with your Windows version, affected component (Service, Admin UI, Agent/Widget, Web Portal, Telegram), reproduction steps, and sanitized logs from `C:\ProgramData\ParentalControl\logs`.
+- **Feature Requests**: Open a [Feature Request](https://github.com/DarkTama/WindowsParentalControl/issues/new?template=feature_request.yml) to suggest enhancements or new parental control features.
+- **Questions & Ideas**: Join the conversation in [GitHub Discussions](https://github.com/DarkTama/WindowsParentalControl/discussions).
+
+---
 
 ## License
 
