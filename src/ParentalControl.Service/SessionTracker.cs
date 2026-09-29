@@ -91,7 +91,8 @@ public sealed class SessionTracker
             {
                 _logger.Information("Login denied (outside schedule): {Username}", username);
                 EventRepository.LogEvent(sid, EventType.LOGIN_DENIED, "Outside allowed schedule");
-                NotificationManager.SendMessage(sessionId, "Parental Control", SettingsRepository.GetMessage(SettingsRepository.KeyMsgLoginDeniedCurfew), isWarning: true, timeoutSeconds: 5);
+                Thread.Sleep(500);
+                NotificationManager.SendMessage(sessionId, "Parental Control", SettingsRepository.GetMessage(SettingsRepository.KeyMsgLoginDeniedCurfew), isWarning: true, timeoutSeconds: 7, wait: true);
                 SessionManager.LockSession(sessionId);
                 return;
             }
@@ -103,7 +104,8 @@ public sealed class SessionTracker
             {
                 _logger.Information("Login denied (limit reached): {Username}", username);
                 EventRepository.LogEvent(sid, EventType.LOGIN_DENIED, "Daily limit already reached");
-                NotificationManager.SendMessage(sessionId, "Parental Control", SettingsRepository.GetMessage(SettingsRepository.KeyMsgLoginDeniedLimit), isWarning: true, timeoutSeconds: 5);
+                Thread.Sleep(500);
+                NotificationManager.SendMessage(sessionId, "Parental Control", SettingsRepository.GetMessage(SettingsRepository.KeyMsgLoginDeniedLimit), isWarning: true, timeoutSeconds: 7, wait: true);
                 SessionManager.LockSession(sessionId);
                 return;
             }
@@ -213,7 +215,8 @@ public sealed class SessionTracker
                 {
                     _logger.Information("Unlock rejected (curfew): {Username} on session {SessionId}", session.Username, sessionId);
                     EventRepository.LogEvent(session.UserSid, EventType.LOGIN_DENIED, "Outside allowed schedule on unlock");
-                    NotificationManager.SendMessage(sessionId, "Parental Control", "Waktu jadwal bermain belum dimulai atau telah berakhir. Sesi dikunci kembali.", isWarning: true, timeoutSeconds: 5);
+                    Thread.Sleep(300);
+                    NotificationManager.SendMessage(sessionId, "Parental Control", "Waktu jadwal bermain belum dimulai atau telah berakhir. Sesi dikunci kembali.", isWarning: true, timeoutSeconds: 7, wait: true);
                     SessionManager.LockSession(sessionId);
                     return;
                 }
@@ -225,7 +228,8 @@ public sealed class SessionTracker
                 {
                     _logger.Information("Unlock rejected (limit reached): {Username} on session {SessionId}", session.Username, sessionId);
                     EventRepository.LogEvent(session.UserSid, EventType.LOGIN_DENIED, "Daily limit reached on unlock");
-                    NotificationManager.SendMessage(sessionId, "Parental Control", "Waktu layar hari ini telah habis. Sesi dikunci kembali.", isWarning: true, timeoutSeconds: 5);
+                    Thread.Sleep(300);
+                    NotificationManager.SendMessage(sessionId, "Parental Control", "Waktu layar hari ini telah habis. Sesi dikunci kembali.", isWarning: true, timeoutSeconds: 7, wait: true);
                     SessionManager.LockSession(sessionId);
                     return;
                 }
@@ -315,7 +319,7 @@ public sealed class SessionTracker
                         UsageRepository.AddMinutes(clockUser.Id, lockDate, limit.DailyMinutes);
                         EventRepository.LogEvent(session.UserSid, EventType.CLOCK_TAMPER,
                             $"Clock went backwards: {session.LastTick:HH:mm:ss} → {now:HH:mm:ss}. Locked for today.");
-                        SessionManager.ForceLogoff(sessionId);
+                        SessionManager.LockSession(sessionId);
                         _activeSessions.TryRemove(sessionId, out _);
                         continue;
                     }
