@@ -1121,13 +1121,28 @@ public static class AdminPage
                         applyBtn.style.display = 'none';
                     } else if (data.hasUpdate) {
                         pendingUpdateDownloadUrl = data.downloadUrl;
+                        const lines = (data.releaseNotes || '').split('\n').filter(l => l.trim().length > 0 && !l.startsWith('##'));
+                        let formattedNotes = '';
+                        for (const line of lines) {
+                            const t = line.trim();
+                            if (t.startsWith('* ') || t.startsWith('- ')) {
+                                formattedNotes += `<div style="margin-bottom:0.25rem">&bull; ${t.substring(2)}</div>`;
+                            } else if (t.startsWith('**Full Changelog**')) {
+                                continue;
+                            } else {
+                                formattedNotes += `<div style="margin-bottom:0.25rem">${t}</div>`;
+                            }
+                        }
+                        if (!formattedNotes) formattedNotes = '<div>Perbaikan performa dan fitur baru.</div>';
+
+                        pendingUpdateDownloadUrl = data.downloadUrl;
                         body.innerHTML = `
                             <div style="margin-bottom:0.75rem">
                                 <span class="badge" style="background:#15803d;color:#dcfce7">Versi Baru Tersedia!</span>
                                 <div style="font-size:1.1rem;font-weight:700;color:#38bdf8;margin-top:0.4rem">${data.releaseTitle || 'v' + data.latestVersion}</div>
                                 <div style="font-size:0.8rem;color:#94a3b8">Versi saat ini: ${data.currentVersion} &bull; Rilis baru: v${data.latestVersion}</div>
                             </div>
-                            <div style="background:#090d16;border:1px solid #1e293b;border-radius:0.4rem;padding:0.75rem;font-size:0.8rem;color:#cbd5e1;max-height:160px;overflow-y:auto;white-space:pre-wrap;margin-bottom:0.75rem">${data.releaseNotes || 'Perbaikan performa dan fitur baru.'}</div>
+                            <div style="background:#090d16;border:1px solid #1e293b;border-radius:0.4rem;padding:0.75rem;font-size:0.8rem;color:#cbd5e1;max-height:180px;overflow-y:auto;margin-bottom:0.75rem">${formattedNotes}</div>
                             <p style="font-size:0.8rem;color:#fef08a">⚠️ Pembaruan akan mengunduh file installer dan memuat ulang layanan serta agent secara otomatis.</p>
                         `;
                         applyBtn.style.display = 'inline-block';

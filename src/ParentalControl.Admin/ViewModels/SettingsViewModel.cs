@@ -68,10 +68,28 @@ public partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _isCheckingUpdate;
-
     [ObservableProperty]
     private bool _isInstallingUpdate;
 
+    [ObservableProperty]
+    private int _downloadProgress;
+
+    [ObservableProperty]
+    private bool _isProgressIndeterminate;
+
+    [ObservableProperty]
+    private bool _isChangelogExpanded;
+
+    [ObservableProperty]
+    private bool _hasMoreChangelog;
+
+    [ObservableProperty]
+    private string _displayedReleaseNotes = string.Empty;
+
+    [ObservableProperty]
+    private string _changelogToggleText = string.Empty;
+
+    private readonly List<string> _parsedChangelog = new();
     // Customizable User Notification Messages
     [ObservableProperty]
     private string _languagePreset = "id";
@@ -343,6 +361,7 @@ public partial class SettingsViewModel : ObservableObject
                 LatestVersion = res.LatestVersion;
                 ReleaseTitle = res.ReleaseTitle;
                 ReleaseNotes = res.ReleaseNotes;
+                ProcessReleaseNotes(res.ReleaseNotes);
                 DownloadUrl = res.DownloadUrl;
                 UpdateStatus = $"Pembaruan baru v{res.LatestVersion} tersedia!";
             }
@@ -362,6 +381,62 @@ public partial class SettingsViewModel : ObservableObject
         }
     }
 
+    private void ProcessReleaseNotes(string rawNotes)
+    {
+        _parsedChangelog.Clear();
+        if (!string.IsNullOrWhiteSpace(rawNotes))
+        {
+            var lines = rawNotes.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var line in lines)
+            {
+                var trimmed = line.Trim();
+                if (trimmed.StartsWith("##") || string.IsNullOrWhiteSpace(trimmed)) continue;
+                if (trimmed.StartsWith("**Full Changelog**", StringComparison.OrdinalIgnoreCase)) continue;
+
+                if (trimmed.StartsWith("* ") || trimmed.StartsWith("- "))
+                {
+                    _parsedChangelog.Add("• " + trimmed.Substring(2).Trim());
+                }
+                else
+                {
+                    _parsedChangelog.Add(trimmed);
+                }
+            }
+        }
+
+        HasMoreChangelog = _parsedChangelog.Count > 4;
+        IsChangelogExpanded = false;
+        RefreshChangelogView();
+    }
+
+    private void RefreshChangelogView()
+    {
+        if (_parsedChangelog.Count == 0)
+        {
+            DisplayedReleaseNotes = !string.IsNullOrWhiteSpace(ReleaseNotes) ? ReleaseNotes : "Perbaikan performa dan fitur baru.";
+            return;
+        }
+
+        if (IsChangelogExpanded || _parsedChangelog.Count <= 4)
+        {
+            DisplayedReleaseNotes = string.Join("\n", _parsedChangelog);
+            ChangelogToggleText = "Tampilkan lebih sedikit ▲";
+        }
+        else
+        {
+            var preview = _parsedChangelog.Take(4);
+            DisplayedReleaseNotes = string.Join("\n", preview) + $"\n... (+{_parsedChangelog.Count - 4} perubahan lainnya)";
+            ChangelogToggleText = $"Lihat semua perubahan ({_parsedChangelog.Count}) ▼";
+        }
+    }
+
+    [RelayCommand]
+    private void ToggleChangelog()
+    {
+        IsChangelogExpanded = !IsChangelogExpanded;
+        RefreshChangelogView();
+    }
+
     [RelayCommand]
     private async Task ApplyUpdateAsync()
     {
@@ -372,26 +447,66 @@ public partial class SettingsViewModel : ObservableObject
         }
 
         var confirm = MessageBox.Show(
-            $"Unduh dan pasang pembaruan v{LatestVersion} sekarang?\nLayanan dan agent akan dimuat ulang secara otomatis.",
-            "Konfirmasi Pembaruan",
+            $"Unduh file pembaruan v{LatestVersion} sekarang?\nSetelah unduhan selesai, Anda dapat membuka wizard installer untuk memasang pembaruan.",
+            "Unduh Pembaruan",
             MessageBoxButton.YesNo,
             MessageBoxImage.Question);
 
         if (confirm != MessageBoxResult.Yes) return;
 
         IsInstallingUpdate = true;
-        UpdateStatus = "Mengunduh file installer ParentalControlSetup.exe...";
-        var (success, msg) = await UpdateService.DownloadAndApplyUpdateAsync(DownloadUrl);
-        UpdateStatus = msg;
-        IsInstallingUpdate = false;
+        IsProgressIndeterminate = true;
+        DownloadProgress = 0;
+        UpdateStatus = "Menyiapkan koneksi unduhan...";
 
-        if (success)
+        var progress = new Progress<int>(pct =>
         {
-            MessageBox.Show(msg, "Pembaruan Dimulai", MessageBoxButton.OK, MessageBoxImage.Information);
+            IsProgressIndeterminate = false;
+            DownloadProgress = pct;
+            UpdateStatus = $"Mengunduh installer: {pct}%";
+        });
+
+        try
+        {
+            var (success, installerPath, msg) = await UpdateService.DownloadUpdateAsync(DownloadUrl, progress);
+            IsInstallingUpdate = false;
+
+            if (!success || string.IsNullOrWhiteSpace(installerPath))
+            {
+                UpdateStatus = msg;
+                MessageBox.Show(msg, "Gagal Mengunduh", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            UpdateStatus = "Unduhan selesai! Menunggu konfirmasi pemasangan.";
+
+            var installConfirm = MessageBox.Show(
+                $"Unduhan pembaruan v{LatestVersion} selesai!\n\nBuka installer sekarang untuk memulai proses pemasangan?\n\n(Aplikasi Admin ini akan ditutup agar pembaruan dapat dipasang dengan lancar, dan dapat dibuka kembali secara otomatis setelah instalasi selesai).",
+                "Pemasangan Pembaruan",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Information);
+
+            if (installConfirm == MessageBoxResult.Yes)
+            {
+                var (launched, launchMsg) = UpdateService.LaunchInstaller(installerPath, silent: false);
+                if (launched)
+                {
+                    System.Windows.Application.Current.Shutdown();
+                }
+                else
+                {
+                    MessageBox.Show(launchMsg, "Gagal Membuka Installer", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+            }
+            else
+            {
+                UpdateStatus = $"File installer tersimpan di:\n{installerPath}\nAnda dapat menjalankannya kapan saja.";
+            }
         }
-        else
+        catch (Exception ex)
         {
-            MessageBox.Show(msg, "Gagal Memperbarui", MessageBoxButton.OK, MessageBoxImage.Error);
+            IsInstallingUpdate = false;
+            UpdateStatus = $"Kesalahan unduh: {ex.Message}";
         }
     }
 }

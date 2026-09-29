@@ -50,6 +50,9 @@ Name: "{group}\{#MyAppName}"; Filename: "{app}\admin\{#MyAppExeName}"; \
 Name: "{commondesktop}\{#MyAppName}"; Filename: "{app}\admin\{#MyAppExeName}"; \
     IconFilename: "{app}\admin\{#MyAppExeName}"; Comment: "Launch Parental Control Admin"
 
+[Run]
+Filename: "{app}\admin\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+
 [UninstallRun]
 ; Stop agent and delete the service before files are removed
 Filename: "taskkill"; Parameters: "/F /IM {#AgentExeName}"; \

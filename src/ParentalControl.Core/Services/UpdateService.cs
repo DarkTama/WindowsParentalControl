@@ -112,11 +112,11 @@ public static class UpdateService
         }
     }
 
-    public static async Task<(bool Success, string Message)> DownloadAndApplyUpdateAsync(string downloadUrl, IProgress<int>? progress = null, CancellationToken cancellationToken = default)
+    public static async Task<(bool Success, string? InstallerPath, string Message)> DownloadUpdateAsync(string downloadUrl, IProgress<int>? progress = null, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(downloadUrl))
         {
-            return (false, "URL unduhan pembaruan tidak valid.");
+            return (false, null, "URL unduhan pembaruan tidak valid.");
         }
 
         try
@@ -158,24 +158,62 @@ public static class UpdateService
                 }
             }
 
-            _logger.Information("Installer downloaded ({Bytes} bytes). Launching silent update...", new FileInfo(installerPath).Length);
+            _logger.Information("Installer downloaded ({Bytes} bytes) to {Path}", new FileInfo(installerPath).Length, installerPath);
+            return (true, installerPath, "File pembaruan berhasil diunduh.");
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Failed to download update installer");
+            return (false, null, $"Gagal mengunduh file pembaruan: {ex.Message}");
+        }
+    }
+
+    public static (bool Success, string Message) LaunchInstaller(string installerPath, bool silent = false)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(installerPath) || !File.Exists(installerPath))
+            {
+                return (false, "File installer tidak ditemukan.");
+            }
+
+            _logger.Information("Launching update installer (Silent={Silent}): {Path}", silent, installerPath);
 
             var startInfo = new ProcessStartInfo
             {
                 FileName = installerPath,
-                Arguments = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART",
+                Arguments = silent ? "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" : "",
                 UseShellExecute = true,
                 Verb = "runas"
             };
 
             Process.Start(startInfo);
-            return (true, "Pembaruan berhasil diunduh dan instalasi otomatis telah dimulai.");
+            return (true, "Installer berhasil dijalankan.");
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, "Failed to download and apply update");
-            return (false, $"Gagal mengunduh atau menjalankan pembaruan: {ex.Message}");
+            _logger.Error(ex, "Failed to launch update installer");
+            return (false, $"Gagal menjalankan installer: {ex.Message}");
         }
+    }
+
+    public static async Task<(bool Success, string Message)> DownloadAndApplyUpdateAsync(string downloadUrl, bool silent = true, IProgress<int>? progress = null, CancellationToken cancellationToken = default)
+    {
+        var (downloaded, installerPath, msg) = await DownloadUpdateAsync(downloadUrl, progress, cancellationToken);
+        if (!downloaded || string.IsNullOrWhiteSpace(installerPath))
+        {
+            return (false, msg);
+        }
+
+        var (launched, launchMsg) = LaunchInstaller(installerPath, silent);
+        if (!launched)
+        {
+            return (false, launchMsg);
+        }
+
+        return (true, silent
+            ? "Pembaruan berhasil diunduh dan instalasi otomatis telah dimulai."
+            : "Pembaruan berhasil diunduh dan wizard instalasi telah dibuka.");
     }
 
     public static bool IsNewerVersion(string latest, string current)
