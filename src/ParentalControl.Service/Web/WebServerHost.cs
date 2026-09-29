@@ -75,7 +75,7 @@ public sealed class WebServerHost : BackgroundService
 
             foreach (var u in restrictedUsers)
             {
-                var limit = ScheduleRepository.GetEffectiveLimit(u.Id, dayOfWeek);
+                var limit = ScheduleRepository.GetEffectiveLimit(u.Id, dayOfWeek, today);
                 var usage = UsageRepository.GetUsage(u.Id, today);
                 var totalAllowed = (limit?.DailyMinutes ?? 120) + (usage?.BonusMinutes ?? 0);
                 var used = usage?.MinutesUsed ?? 0;
@@ -159,7 +159,7 @@ public sealed class WebServerHost : BackgroundService
                 }
             }
 
-            var limit = ScheduleRepository.GetEffectiveLimit(targetUser!.Id, dayOfWeek);
+            var limit = ScheduleRepository.GetEffectiveLimit(targetUser!.Id, dayOfWeek, today);
             var usage = UsageRepository.GetUsage(targetUser.Id, today);
             var totalAllowed = (limit?.DailyMinutes ?? 120) + (usage?.BonusMinutes ?? 0);
             var used = usage?.MinutesUsed ?? 0;
@@ -198,24 +198,33 @@ public sealed class WebServerHost : BackgroundService
             var countToday = GraceRequestRepository.GetTodayRequestCount(targetUser.Id, today);
             var hasPending = GraceRequestRepository.HasPendingRequest(targetUser.Id, today);
             var latestReq = GraceRequestRepository.GetTodayRequest(targetUser.Id, today);
+            var lastOverallReq = GraceRequestRepository.GetLatestRequest(targetUser.Id);
+            string? latestDeclineReason = null;
+            DateTime? latestResolvedAt = null;
+            if (lastOverallReq != null && string.Equals(lastOverallReq.Status, "DECLINED", StringComparison.OrdinalIgnoreCase))
+            {
+                latestDeclineReason = lastOverallReq.DeclineReason;
+                latestResolvedAt = lastOverallReq.ResolvedAt;
+            }
 
             var availableUsernames = restrictedUsers.Select(u => u.Username).ToList();
 
             var baseLimit = LimitRepository.GetByUserId(targetUser.Id);
             var customSchedules = ScheduleRepository.GetWeeklySchedule(targetUser.Id);
+            var upcomingExceptions = ScheduleExceptionRepository.GetUpcomingForUser(targetUser.Id, today);
             var defaultSummary = baseLimit != null
                 ? $"{baseLimit.DailyMinutes}m ({baseLimit.ScheduleStart:HH:mm}–{baseLimit.ScheduleEnd:HH:mm})"
                 : "120m (08:00–22:00)";
 
-            var dayNames = new (DayOfWeek Day, string Name)[]
+            var dayNames = new (DayOfWeek Day, string Code, string Name)[]
             {
-                (DayOfWeek.Monday, "Senin"),
-                (DayOfWeek.Tuesday, "Selasa"),
-                (DayOfWeek.Wednesday, "Rabu"),
-                (DayOfWeek.Thursday, "Kamis"),
-                (DayOfWeek.Friday, "Jumat"),
-                (DayOfWeek.Saturday, "Sabtu"),
-                (DayOfWeek.Sunday, "Minggu")
+                (DayOfWeek.Monday, "Sen", "Senin"),
+                (DayOfWeek.Tuesday, "Sel", "Selasa"),
+                (DayOfWeek.Wednesday, "Rab", "Rabu"),
+                (DayOfWeek.Thursday, "Kam", "Kamis"),
+                (DayOfWeek.Friday, "Jum", "Jumat"),
+                (DayOfWeek.Saturday, "Sab", "Sabtu"),
+                (DayOfWeek.Sunday, "Min", "Minggu")
             };
 
             var weeklySchedule = dayNames.Select(dn =>
@@ -224,13 +233,32 @@ public sealed class WebServerHost : BackgroundService
                 int mins = custom != null ? custom.DailyMinutes : (baseLimit?.DailyMinutes ?? 120);
                 var start = custom != null ? custom.ScheduleStart : (baseLimit?.ScheduleStart ?? new TimeOnly(8, 0));
                 var end = custom != null ? custom.ScheduleEnd : (baseLimit?.ScheduleEnd ?? new TimeOnly(22, 0));
+
+                bool hasExc = false;
+                string? excNote = null;
+                if (dn.Day == dayOfWeek)
+                {
+                    var todayExc = upcomingExceptions.FirstOrDefault(e => e.ExceptionDate == today);
+                    if (todayExc != null)
+                    {
+                        hasExc = true;
+                        mins = todayExc.DailyMinutes;
+                        start = todayExc.ScheduleStart;
+                        end = todayExc.ScheduleEnd;
+                        excNote = "Pengecualian Hari Ini";
+                    }
+                }
+
                 return new RequestPage.ScheduleDayView(
                     dn.Day,
+                    dn.Code,
                     dn.Name,
                     mins,
-                    $"{start:HH:mm}–{end:HH:mm}",
+                    $"{start:HH:mm} – {end:HH:mm}",
                     custom != null,
-                    dn.Day == dayOfWeek
+                    dn.Day == dayOfWeek,
+                    hasExc,
+                    excNote
                 );
             }).ToList();
 
@@ -243,7 +271,9 @@ public sealed class WebServerHost : BackgroundService
                 countToday,
                 maxRequests,
                 hasPending,
-                latestReq?.Status,
+                latestReq?.Status ?? lastOverallReq?.Status,
+                latestDeclineReason,
+                latestResolvedAt,
                 isAdminTesting,
                 availableUsernames,
                 isSessionActive,
@@ -261,13 +291,24 @@ public sealed class WebServerHost : BackgroundService
                 using var reader = new StreamReader(ctx.Request.Body);
                 var body = await reader.ReadToEndAsync();
                 var doc = JsonDocument.Parse(body);
+                var requestType = doc.RootElement.TryGetProperty("requestType", out var typeProp) ? typeProp.GetString() : "extension";
                 var minutes = doc.RootElement.GetProperty("minutes").GetInt32();
                 var reason = doc.RootElement.GetProperty("reason").GetString() ?? "";
                 var requestedUser = doc.RootElement.TryGetProperty("username", out var uProp) ? uProp.GetString() : null;
 
-                if (minutes <= 0 || minutes > 120 || string.IsNullOrWhiteSpace(reason))
+                if (string.Equals(requestType, "schedule_change", StringComparison.OrdinalIgnoreCase))
                 {
-                    return Results.BadRequest(new { error = "Jumlah menit tidak valid atau alasan harus diisi." });
+                    if (minutes <= 0 || minutes > 480 || string.IsNullOrWhiteSpace(reason))
+                    {
+                        return Results.BadRequest(new { error = "Jumlah menit tidak valid (1–480 menit) atau alasan harus diisi." });
+                    }
+                }
+                else
+                {
+                    if (minutes <= 0 || minutes > 120 || string.IsNullOrWhiteSpace(reason))
+                    {
+                        return Results.BadRequest(new { error = "Jumlah menit tidak valid (1–120 menit) atau alasan harus diisi." });
+                    }
                 }
 
                 var today = DateOnly.FromDateTime(DateTime.Now);
@@ -322,12 +363,31 @@ public sealed class WebServerHost : BackgroundService
                     return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
                 }
 
-                var req = GraceRequestRepository.Create(user.Id, today, minutes, reason);
+                if (string.Equals(requestType, "schedule_change", StringComparison.OrdinalIgnoreCase))
+                {
+                    var targetDateStr = doc.RootElement.GetProperty("targetDate").GetString();
+                    if (!DateOnly.TryParse(targetDateStr, out var targetDate))
+                    {
+                        return Results.BadRequest(new { error = "Tanggal sasaran tidak valid." });
+                    }
 
-                // Dispatch Telegram alert
-                _ = _telegramBotService.SendGraceRequestAlertAsync(req, user.Username);
+                    var startStr = doc.RootElement.TryGetProperty("requestedStart", out var sProp) ? sProp.GetString() : null;
+                    var endStr = doc.RootElement.TryGetProperty("requestedEnd", out var eProp) ? eProp.GetString() : null;
+                    TimeOnly? start = !string.IsNullOrEmpty(startStr) && TimeOnly.TryParse(startStr, out var sVal) ? sVal : null;
+                    TimeOnly? end = !string.IsNullOrEmpty(endStr) && TimeOnly.TryParse(endStr, out var eVal) ? eVal : null;
 
-                return Results.Ok(new { success = true, message = $"Permintaan tambahan waktu +{minutes} menit berhasil dikirim ke administrator." });
+                    var req = GraceRequestRepository.CreateScheduleChange(user.Id, today, targetDate, minutes, start, end, reason);
+                    _ = _telegramBotService.SendGraceRequestAlertAsync(req, user.Username);
+
+                    return Results.Ok(new { success = true, message = $"Pengajuan jadwal baru untuk {targetDate:dd/MM/yyyy} ({minutes}m) berhasil dikirim ke orang tua." });
+                }
+                else
+                {
+                    var req = GraceRequestRepository.Create(user.Id, today, minutes, reason);
+                    _ = _telegramBotService.SendGraceRequestAlertAsync(req, user.Username);
+
+                    return Results.Ok(new { success = true, message = $"Permintaan tambahan waktu +{minutes} menit berhasil dikirim ke orang tua." });
+                }
             }
             catch (Exception ex)
             {
@@ -360,7 +420,7 @@ public sealed class WebServerHost : BackgroundService
 
             var today = DateOnly.FromDateTime(DateTime.Now);
             var dayOfWeek = DateTime.Now.DayOfWeek;
-            var limit = ScheduleRepository.GetEffectiveLimit(user.Id, dayOfWeek);
+            var limit = ScheduleRepository.GetEffectiveLimit(user.Id, dayOfWeek, today);
             var usage = UsageRepository.GetUsage(user.Id, today);
             var totalAllowed = (limit?.DailyMinutes ?? 120) + (usage?.BonusMinutes ?? 0);
             var used = usage?.MinutesUsed ?? 0;
@@ -389,6 +449,18 @@ public sealed class WebServerHost : BackgroundService
             }
 
             var remainingSeconds = Math.Min(dailySec, curfewSec);
+            var isCurfewClamped = curfewSec < dailySec;
+
+            var latestReq = GraceRequestRepository.GetLatestRequest(user.Id);
+            int? lastDeclinedId = null;
+            string? lastDeclinedReason = null;
+            DateTime? lastDeclinedTime = null;
+            if (latestReq != null && string.Equals(latestReq.Status, "DECLINED", StringComparison.OrdinalIgnoreCase))
+            {
+                lastDeclinedId = latestReq.Id;
+                lastDeclinedReason = latestReq.DeclineReason;
+                lastDeclinedTime = latestReq.ResolvedAt;
+            }
 
             var curfew = limit != null ? $"{limit.ScheduleStart:HH:mm} – {limit.ScheduleEnd:HH:mm}" : "08:00 – 22:00";
 
@@ -414,6 +486,10 @@ public sealed class WebServerHost : BackgroundService
                 remainingSeconds,
                 curfew,
                 isLocked,
+                isCurfewClamped,
+                lastDeclinedId,
+                lastDeclinedReason,
+                lastDeclinedTime,
                 captureRequested,
                 watchIntervalSeconds = watchInterval
             });
@@ -611,7 +687,7 @@ public sealed class WebServerHost : BackgroundService
                 var user = UserRepository.GetBySid(activeSession.UserSid);
                 if (user == null) continue;
                 var isRestricted = user.IsRestricted;
-                var limit = isRestricted ? ScheduleRepository.GetEffectiveLimit(user.Id, dayOfWeek) : null;
+                var limit = isRestricted ? ScheduleRepository.GetEffectiveLimit(user.Id, dayOfWeek, today) : null;
                 var usage = isRestricted ? UsageRepository.GetUsage(user.Id, today) : null;
                 var totalAllowed = limit != null ? (limit.DailyMinutes + (usage?.BonusMinutes ?? 0)) : 0;
                 var used = usage?.MinutesUsed ?? 0;
@@ -1054,6 +1130,17 @@ public sealed class WebServerHost : BackgroundService
                 };
             }).ToList();
 
+            var today = DateOnly.FromDateTime(DateTime.Now);
+            var upcomingExceptions = ScheduleExceptionRepository.GetUpcomingForUser(userId, today)
+                .Select(e => new
+                {
+                    id = e.Id,
+                    date = e.ExceptionDate.ToString("yyyy-MM-dd"),
+                    dailyMinutes = e.DailyMinutes,
+                    scheduleStart = e.ScheduleStart.ToString("HH:mm"),
+                    scheduleEnd = e.ScheduleEnd.ToString("HH:mm")
+                }).ToList();
+
             return Results.Ok(new
             {
                 userId = user.Id,
@@ -1061,9 +1148,63 @@ public sealed class WebServerHost : BackgroundService
                 baseDailyMinutes = baseMinutes,
                 baseScheduleStart = baseStart,
                 baseScheduleEnd = baseEnd,
-                days
+                days,
+                upcomingExceptions
             });
         });
+        // Admin Schedule Exception Add/Upsert POST API
+        app.MapPost("/api/admin/schedule-exception", async (HttpContext ctx) =>
+        {
+            if (!CheckAuth(ctx)) return Results.Unauthorized();
+            try
+            {
+                using var reader = new StreamReader(ctx.Request.Body);
+                var body = await reader.ReadToEndAsync();
+                var doc = JsonDocument.Parse(body);
+                var root = doc.RootElement;
+                var userId = root.GetProperty("userId").GetInt32();
+                var dateStr = root.GetProperty("date").GetString();
+                if (!DateOnly.TryParse(dateStr, out var date))
+                    return Results.BadRequest(new { error = "Tanggal tidak valid." });
+
+                var minutes = root.GetProperty("dailyMinutes").GetInt32();
+                var startStr = root.GetProperty("scheduleStart").GetString() ?? "08:00";
+                var endStr = root.GetProperty("scheduleEnd").GetString() ?? "22:00";
+                if (!TimeOnly.TryParse(startStr, out var start) || !TimeOnly.TryParse(endStr, out var end) || start >= end)
+                    return Results.BadRequest(new { error = "Jam batas tidak valid." });
+                if (minutes < 1 || minutes > 1440)
+                    return Results.BadRequest(new { error = "Menit harian harus antara 1 dan 1440." });
+
+                ScheduleExceptionRepository.Upsert(new ScheduleException
+                {
+                    UserId = userId,
+                    ExceptionDate = date,
+                    DailyMinutes = minutes,
+                    ScheduleStart = start,
+                    ScheduleEnd = end,
+                    CreatedAt = DateTime.Now
+                });
+
+                return Results.Ok(new { success = true });
+            }
+            catch (Exception ex)
+            {
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        // Admin Schedule Exception Delete API
+        app.MapDelete("/api/admin/schedule-exception", (HttpContext ctx) =>
+        {
+            if (!CheckAuth(ctx)) return Results.Unauthorized();
+            var idStr = ctx.Request.Query["id"].ToString();
+            if (!int.TryParse(idStr, out var id))
+                return Results.BadRequest(new { error = "ID tidak valid." });
+
+            ScheduleExceptionRepository.Delete(id);
+            return Results.Ok(new { success = true });
+        });
+
 
         // Admin Schedule Management POST API
         app.MapPost("/api/admin/schedule", async (HttpContext ctx) =>

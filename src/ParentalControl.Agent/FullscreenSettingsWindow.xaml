@@ -1,0 +1,67 @@
+<Window x:Class="ParentalControl.Agent.FullscreenSettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Pengaturan Tampilan Layar Penuh"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="ToolWindow"
+        ResizeMode="NoResize"
+        Width="360"
+        Height="420"
+        Background="#0f172a"
+        Foreground="#e2e8f0">
+
+    <Window.Resources>
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="#e2e8f0" />
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style TargetType="Button">
+            <Setter Property="Height" Value="32" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
+    </Window.Resources>
+
+    <Grid Margin="18">
+        <StackPanel>
+            <TextBlock Text="⚙️ Posisi Saat Layar Penuh (Game / Video)" FontSize="14" FontWeight="Bold" Margin="0,0,0,14" Foreground="#38bdf8" />
+
+            <!-- Corner Preset -->
+            <TextBlock Text="Posisi Sudut (Corner Dock):" FontWeight="SemiBold" Margin="0,0,0,4" />
+            <ComboBox x:Name="CornerCombo" Height="28" Margin="0,0,0,12" Background="#1e293b" Foreground="#0f172a">
+                <ComboBoxItem Content="Atas-Kanan (Top-Right)" Tag="TopRight" IsSelected="True" />
+                <ComboBoxItem Content="Atas-Kiri (Top-Left)" Tag="TopLeft" />
+                <ComboBoxItem Content="Bawah-Kanan (Bottom-Right)" Tag="BottomRight" />
+                <ComboBoxItem Content="Bawah-Kiri (Bottom-Left)" Tag="BottomLeft" />
+            </ComboBox>
+
+            <!-- Target Monitor -->
+            <TextBlock Text="Layar Tujuan (Multi-Monitor):" FontWeight="SemiBold" Margin="0,0,0,4" />
+            <ComboBox x:Name="MonitorCombo" Height="28" Margin="0,0,0,12" Background="#1e293b" Foreground="#0f172a" />
+
+            <!-- Opacity Slider -->
+            <DockPanel Margin="0,0,0,4">
+                <TextBlock Text="Transparansi Saat Game:" FontWeight="SemiBold" />
+                <TextBlock x:Name="OpacityLabel" Text="60%" HorizontalAlignment="Right" Foreground="#94a3b8" />
+            </DockPanel>
+            <Slider x:Name="OpacitySlider" Minimum="20" Maximum="100" Value="60" Margin="0,0,0,14" ValueChanged="OpacitySlider_ValueChanged" />
+
+            <!-- Auto-collapse Checkbox -->
+            <CheckBox x:Name="AutoCollapseCheck" Content="Kecilkan ke mini pill pada layar tunggal" IsChecked="True" Foreground="#e2e8f0" Margin="0,0,0,16" />
+
+            <!-- Test / Preview Button -->
+            <Button x:Name="PreviewBtn" Content="👁️ Uji / Preview Posisi (8 Detik)"
+                    Background="#0284c7" Foreground="White" BorderThickness="0" Margin="0,0,0,12"
+                    Click="PreviewBtn_Click" />
+
+            <!-- Action Buttons -->
+            <DockPanel LastChildFill="False" Margin="0,8,0,0">
+                <Button Content="Batal" Width="80" Background="#334155" Foreground="White" BorderThickness="0"
+                        Click="CancelBtn_Click" DockPanel.Dock="Left" />
+                <Button Content="Simpan" Width="100" Background="#2563eb" Foreground="White" BorderThickness="0"
+                        Click="SaveBtn_Click" DockPanel.Dock="Right" />
+            </DockPanel>
+        </StackPanel>
+    </Grid>
+</Window>

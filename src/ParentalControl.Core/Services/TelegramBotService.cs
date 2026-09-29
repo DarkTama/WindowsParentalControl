@@ -16,6 +16,7 @@ public sealed class TelegramBotService
 
     private readonly Serilog.ILogger _logger;
     private long _lastUpdateId = 0;
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (int RequestId, DateTime ExpiresAt)> _pendingCustomDeclines = new();
 
     public static Func<string, Task<ScreenCaptureRecord?>>? OnCaptureRequested { get; set; }
     public static Func<Task<string>>? OnStatusRequested { get; set; }
@@ -50,42 +51,71 @@ public sealed class TelegramBotService
             return false;
         }
 
-        var text = $"🎮 *Screen Time Request*\n"
+        string text;
+        object inlineKeyboard;
+
+        if (string.Equals(request.RequestType, "schedule_change", StringComparison.OrdinalIgnoreCase))
+        {
+            var targetDate = request.TargetDate ?? request.Date;
+            var dayName = GetIndonesianDay(targetDate.DayOfWeek);
+            var startStr = request.RequestedStart.HasValue ? request.RequestedStart.Value.ToString("HH:mm") : "08:00";
+            var endStr = request.RequestedEnd.HasValue ? request.RequestedEnd.Value.ToString("HH:mm") : "21:00";
+
+            text = $"📅 *Pengajuan Perubahan Jadwal Layar*\n"
+                 + $"*Pengguna:* `{username}`\n"
+                 + $"*Tanggal Sasaran:* `{targetDate:yyyy-MM-dd}` ({dayName})\n"
+                 + $"*Kuota & Jam:* {request.RequestedMinutes} menit ({startStr} – {endStr})\n"
+                 + $"*Alasan:* _{EscapeMarkdown(request.Reason)}_\n"
+                 + $"*Diajukan:* {request.CreatedAt:HH:mm:ss}";
+
+            inlineKeyboard = new
+            {
+                inline_keyboard = new object[][]
+                {
+                    new object[] { new { text = "✅ Setujui (1 Hari Saja)", callback_data = $"app_exc:{request.Id}:0" } },
+                    new object[] { new { text = "🌟 Setujui (Permanen)", callback_data = $"app_perm:{request.Id}:0" } },
+                    new object[] { new { text = "❌ Tolak Permintaan", callback_data = $"dec_menu:{request.Id}:0" } }
+                }
+            };
+        }
+        else
+        {
+            text = $"🎮 *Screen Time Request*\n"
                  + $"*User:* `{username}`\n"
                  + $"*Requested:* {request.RequestedMinutes} minutes\n"
                  + $"*Reason:* _{EscapeMarkdown(request.Reason)}_\n"
                  + $"*Submitted:* {request.CreatedAt:HH:mm:ss}";
 
-        var approveMinutes = new SortedSet<int>(Comparer<int>.Create((a, b) => b.CompareTo(a)));
-        approveMinutes.Add(request.RequestedMinutes);
-        if (request.RequestedMinutes > 60) approveMinutes.Add(60);
-        if (request.RequestedMinutes > 30) approveMinutes.Add(30);
-        if (request.RequestedMinutes > 15) approveMinutes.Add(15);
+            var approveMinutes = new SortedSet<int>(Comparer<int>.Create((a, b) => b.CompareTo(a)));
+            approveMinutes.Add(request.RequestedMinutes);
+            if (request.RequestedMinutes > 60) approveMinutes.Add(60);
+            if (request.RequestedMinutes > 30) approveMinutes.Add(30);
+            if (request.RequestedMinutes > 15) approveMinutes.Add(15);
 
-        var allButtons = approveMinutes
-            .Select(m => (object)new { text = $"✅ Approve {m}m", callback_data = $"approve:{request.Id}:{m}" })
-            .ToList();
-        allButtons.Add(new { text = "❌ Decline", callback_data = $"decline:{request.Id}:0" });
+            var allButtons = approveMinutes
+                .Select(m => (object)new { text = $"✅ Approve {m}m", callback_data = $"approve:{request.Id}:{m}" })
+                .ToList();
+            allButtons.Add(new { text = "❌ Tolak", callback_data = $"dec_menu:{request.Id}:0" });
 
-        object[][] buttonRows;
-        if (allButtons.Count <= 3)
-        {
-            buttonRows = new[] { allButtons.ToArray() };
+            object[][] buttonRows;
+            if (allButtons.Count <= 3)
+            {
+                buttonRows = new[] { allButtons.ToArray() };
+            }
+            else
+            {
+                buttonRows = allButtons
+                    .Select((btn, idx) => new { btn, idx })
+                    .GroupBy(x => x.idx / 2)
+                    .Select(g => g.Select(x => x.btn).ToArray())
+                    .ToArray();
+            }
+
+            inlineKeyboard = new
+            {
+                inline_keyboard = buttonRows
+            };
         }
-        else
-        {
-            buttonRows = allButtons
-                .Select((btn, idx) => new { btn, idx })
-                .GroupBy(x => x.idx / 2)
-                .Select(g => g.Select(x => x.btn).ToArray())
-                .ToArray();
-        }
-
-        var inlineKeyboard = new
-        {
-            inline_keyboard = buttonRows
-        };
-
         var payload = new
         {
             chat_id = chatId,
@@ -194,13 +224,14 @@ public sealed class TelegramBotService
             await AnswerCallbackQueryAsync(botToken, callbackId, "Invalid command.");
             return;
         }
-
         var action = parts[0];
-        if (!int.TryParse(parts[1], out var requestId) || !int.TryParse(parts[2], out var bonusMins))
+
+        if (!int.TryParse(parts[1], out var requestId))
         {
             await AnswerCallbackQueryAsync(botToken, callbackId, "Invalid payload.");
             return;
         }
+        _ = int.TryParse(parts[2], out var bonusMins);
 
         var req = GraceRequestRepository.GetById(requestId);
         if (req == null)
@@ -225,7 +256,6 @@ public sealed class TelegramBotService
             {
                 EventRepository.LogEvent(user.Sid, EventType.LOGIN, $"Grace granted: +{bonusMins}m by Admin (Request #{requestId})");
 
-                // Find active session for user to pop notification
                 var activeSessions = SessionManager.GetActiveSessions();
                 var userSession = activeSessions.FirstOrDefault(s => s.Sid == user.Sid);
                 if (userSession.Sid != null)
@@ -239,6 +269,135 @@ public sealed class TelegramBotService
             await AnswerCallbackQueryAsync(botToken, callbackId, $"Approved +{bonusMins}m!");
             await EditMessageTextAsync(botToken, configuredChatId, messageId,
                 $"✅ *Screen Time Request #{requestId} APPROVED* (+{bonusMins} mins)\nResolved at {DateTime.Now:HH:mm:ss}");
+        }
+        else if (action == "app_exc")
+        {
+            var targetDate = req.TargetDate ?? req.Date;
+            var start = req.RequestedStart ?? new TimeOnly(8, 0);
+            var end = req.RequestedEnd ?? new TimeOnly(21, 0);
+            var mins = req.RequestedMinutes > 0 ? req.RequestedMinutes : 120;
+
+            ScheduleExceptionRepository.Upsert(new ScheduleException
+            {
+                UserId = req.UserId,
+                ExceptionDate = targetDate,
+                DailyMinutes = mins,
+                ScheduleStart = start,
+                ScheduleEnd = end,
+                CreatedAt = DateTime.Now
+            });
+
+            GraceRequestRepository.Resolve(requestId, "APPROVED");
+
+            var user = UserRepository.GetAll().FirstOrDefault(u => u.Id == req.UserId);
+            if (user != null)
+            {
+                EventRepository.LogEvent(user.Sid, EventType.LOGIN, $"Schedule exception approved for {targetDate:yyyy-MM-dd}: {mins}m ({start:HH:mm}-{end:HH:mm}) (Request #{requestId})");
+                var activeSessions = SessionManager.GetActiveSessions();
+                var userSession = activeSessions.FirstOrDefault(s => s.Sid == user.Sid);
+                if (userSession.Sid != null)
+                {
+                    NotificationManager.SendMessage(userSession.SessionId, "Parental Control — Jadwal Disetujui!",
+                        $"Jadwal khusus untuk tanggal {targetDate:dd/MM/yyyy} ({mins}m, {start:HH:mm}–{end:HH:mm}) telah disetujui orang tua.",
+                        isWarning: false, timeoutSeconds: 20);
+                }
+            }
+
+            await AnswerCallbackQueryAsync(botToken, callbackId, "Pengecualian Disetujui!");
+            await EditMessageTextAsync(botToken, configuredChatId, messageId,
+                $"✅ *Schedule Change #{requestId} APPROVED (1 Hari Saja)*\nTanggal: `{targetDate:yyyy-MM-dd}`\nKuota: {mins} menit ({start:HH:mm} – {end:HH:mm})\nResolved at {DateTime.Now:HH:mm:ss}");
+        }
+        else if (action == "app_perm")
+        {
+            var targetDate = req.TargetDate ?? req.Date;
+            var targetDayOfWeek = targetDate.ToDateTime(TimeOnly.MinValue).DayOfWeek;
+            var start = req.RequestedStart ?? new TimeOnly(8, 0);
+            var end = req.RequestedEnd ?? new TimeOnly(21, 0);
+            var mins = req.RequestedMinutes > 0 ? req.RequestedMinutes : 120;
+
+            ScheduleRepository.SaveDaySchedule(new DaySchedule
+            {
+                UserId = req.UserId,
+                DayOfWeek = targetDayOfWeek,
+                DailyMinutes = mins,
+                ScheduleStart = start,
+                ScheduleEnd = end
+            });
+            GraceRequestRepository.Resolve(requestId, "APPROVED");
+
+            var user = UserRepository.GetAll().FirstOrDefault(u => u.Id == req.UserId);
+            if (user != null)
+            {
+                EventRepository.LogEvent(user.Sid, EventType.LOGIN, $"Permanent schedule approved for {targetDayOfWeek}: {mins}m ({start:HH:mm}-{end:HH:mm}) (Request #{requestId})");
+                var activeSessions = SessionManager.GetActiveSessions();
+                var userSession = activeSessions.FirstOrDefault(s => s.Sid == user.Sid);
+                if (userSession.Sid != null)
+                {
+                    NotificationManager.SendMessage(userSession.SessionId, "Parental Control — Jadwal Permanen Disetujui!",
+                        $"Jadwal mingguan hari {GetIndonesianDay(targetDayOfWeek)} ({mins}m, {start:HH:mm}–{end:HH:mm}) telah diperbarui permanen oleh orang tua.",
+                        isWarning: false, timeoutSeconds: 20);
+                }
+            }
+
+            await AnswerCallbackQueryAsync(botToken, callbackId, "Jadwal Permanen Disetujui!");
+            await EditMessageTextAsync(botToken, configuredChatId, messageId,
+                $"🌟 *Schedule Change #{requestId} APPROVED (Jadwal Permanen)*\nHari: `{GetIndonesianDay(targetDayOfWeek)}`\nKuota: {mins} menit ({start:HH:mm} – {end:HH:mm})\nResolved at {DateTime.Now:HH:mm:ss}");
+        }
+        else if (action == "dec_menu")
+        {
+            var presetsKeyboard = new
+            {
+                inline_keyboard = new object[][]
+                {
+                    new object[] { new { text = "📚 Belum Selesai Tugas", callback_data = $"dec_preset:{requestId}:1" } },
+                    new object[] { new { text = "🌙 Waktunya Tidur", callback_data = $"dec_preset:{requestId}:2" } },
+                    new object[] { new { text = "🍽️ Waktunya Makan", callback_data = $"dec_preset:{requestId}:3" } },
+                    new object[] { new { text = "⚠️ Melanggar Aturan", callback_data = $"dec_preset:{requestId}:4" } },
+                    new object[] { new { text = "✍️ Tulis Alasan Sendiri", callback_data = $"dec_custom:{requestId}:0" } },
+                    new object[] { new { text = "❌ Tolak Tanpa Alasan", callback_data = $"dec_preset:{requestId}:0" } }
+                }
+            };
+
+            await AnswerCallbackQueryAsync(botToken, callbackId, "Pilih alasan penolakan:");
+            await EditMessageTextAndKeyboardAsync(botToken, configuredChatId, messageId,
+                $"❌ *Pilih Alasan Penolakan untuk Permintaan #{requestId}:*", presetsKeyboard);
+        }
+        else if (action == "dec_preset")
+        {
+            string declineReason = bonusMins switch
+            {
+                1 => "Selesaikan tugas sekolah terlebih dahulu.",
+                2 => "Sudah waktunya tidur/istirahat.",
+                3 => "Waktunya makan bersama keluarga.",
+                4 => "Waktu bermain dibatasi karena melanggar aturan.",
+                _ => "Permintaan ditolak oleh orang tua."
+            };
+
+            GraceRequestRepository.Resolve(requestId, "DECLINED", declineReason);
+            var user = UserRepository.GetAll().FirstOrDefault(u => u.Id == req.UserId);
+            if (user != null)
+            {
+                EventRepository.LogEvent(user.Sid, EventType.LOGIN_DENIED, $"Grace declined by parent: {declineReason} (Request #{requestId})");
+                var activeSessions = SessionManager.GetActiveSessions();
+                var userSession = activeSessions.FirstOrDefault(s => s.Sid == user.Sid);
+                if (userSession.Sid != null)
+                {
+                    NotificationManager.SendMessage(userSession.SessionId, "Parental Control — Permintaan Ditolak",
+                        $"Permintaan Anda ditolak: \"{declineReason}\"",
+                        isWarning: true, timeoutSeconds: 15);
+                }
+            }
+
+            await AnswerCallbackQueryAsync(botToken, callbackId, "Ditolak.");
+            await EditMessageTextAsync(botToken, configuredChatId, messageId,
+                $"❌ *Permintaan #{requestId} DITOLAK*\nAlasan: _{EscapeMarkdown(declineReason)}_\nResolved at {DateTime.Now:HH:mm:ss}");
+        }
+        else if (action == "dec_custom")
+        {
+            _pendingCustomDeclines[configuredChatId] = (requestId, DateTime.UtcNow.AddMinutes(3));
+            await AnswerCallbackQueryAsync(botToken, callbackId, "Ketik alasan...");
+            await EditMessageTextAsync(botToken, configuredChatId, messageId,
+                $"✍️ *Silakan balas/ketik alasan penolakan untuk Permintaan #{requestId}:*\n(Waktu respons: 3 menit)");
         }
         else if (action == "decline")
         {
@@ -302,6 +461,40 @@ public sealed class TelegramBotService
         var text = message?["text"]?.ToString()?.Trim() ?? "";
         if (string.IsNullOrWhiteSpace(text)) return;
 
+        if (_pendingCustomDeclines.TryGetValue(configuredChatId, out var pending))
+        {
+            if (DateTime.UtcNow < pending.ExpiresAt)
+            {
+                _pendingCustomDeclines.TryRemove(configuredChatId, out _);
+                var customReason = text.Trim();
+                GraceRequestRepository.Resolve(pending.RequestId, "DECLINED", customReason);
+
+                var customReq = GraceRequestRepository.GetById(pending.RequestId);
+                if (customReq != null)
+                {
+                    var user = UserRepository.GetAll().FirstOrDefault(u => u.Id == customReq.UserId);
+                    if (user != null)
+                    {
+                        EventRepository.LogEvent(user.Sid, EventType.LOGIN_DENIED, $"Grace declined with custom reason: {customReason} (Request #{pending.RequestId})");
+                        var activeSessions = SessionManager.GetActiveSessions();
+                        var userSession = activeSessions.FirstOrDefault(s => s.Sid == user.Sid);
+                        if (userSession.Sid != null)
+                        {
+                            NotificationManager.SendMessage(userSession.SessionId, "Parental Control — Permintaan Ditolak",
+                                $"Permintaan Anda ditolak: \"{customReason}\"",
+                                isWarning: true, timeoutSeconds: 15);
+                        }
+                    }
+                }
+
+                await SendTextMessageAsync(chatId, $"❌ Permintaan #{pending.RequestId} telah ditolak dengan alasan:\n_{EscapeMarkdown(customReason)}_");
+                return;
+            }
+            else
+            {
+                _pendingCustomDeclines.TryRemove(configuredChatId, out _);
+            }
+        }
         if (text.StartsWith("/capture", StringComparison.OrdinalIgnoreCase))
         {
             var parts = text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
@@ -405,6 +598,36 @@ public sealed class TelegramBotService
         }
     }
 
+    private static async Task EditMessageTextAndKeyboardAsync(string botToken, string chatId, long messageId, string text, object inlineKeyboard)
+    {
+        try
+        {
+            var url = $"https://api.telegram.org/bot{botToken}/editMessageText";
+            var payload = new
+            {
+                chat_id = chatId,
+                message_id = messageId,
+                text = text,
+                parse_mode = "Markdown",
+                reply_markup = inlineKeyboard
+            };
+            using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+            await HttpClient.PostAsync(url, content);
+        }
+        catch { }
+    }
+
+    private static string GetIndonesianDay(DayOfWeek day) => day switch
+    {
+        DayOfWeek.Monday => "Senin",
+        DayOfWeek.Tuesday => "Selasa",
+        DayOfWeek.Wednesday => "Rabu",
+        DayOfWeek.Thursday => "Kamis",
+        DayOfWeek.Friday => "Jumat",
+        DayOfWeek.Saturday => "Sabtu",
+        DayOfWeek.Sunday => "Minggu",
+        _ => day.ToString()
+    };
     private static string EscapeMarkdown(string text)
     {
         if (string.IsNullOrEmpty(text)) return "";

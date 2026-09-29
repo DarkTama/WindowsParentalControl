@@ -5,8 +5,24 @@ namespace ParentalControl.Core.Data;
 
 public static class ScheduleRepository
 {
-    public static LimitConfig? GetEffectiveLimit(int userId, DayOfWeek day)
+    public static LimitConfig? GetEffectiveLimit(int userId, DayOfWeek day, DateOnly? date = null)
     {
+        var targetDate = date ?? DateOnly.FromDateTime(DateTime.Now);
+
+        // 1. Highest priority: single-day schedule exception
+        var exc = ScheduleExceptionRepository.GetForDate(userId, targetDate);
+        if (exc != null)
+        {
+            return new LimitConfig
+            {
+                UserId = userId,
+                DailyMinutes = exc.DailyMinutes,
+                ScheduleStart = exc.ScheduleStart,
+                ScheduleEnd = exc.ScheduleEnd
+            };
+        }
+
+        // 2. Weekly schedule override
         using var connection = DatabaseManager.CreateConnection();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = """
@@ -29,7 +45,7 @@ public static class ScheduleRepository
             };
         }
 
-        // Fallback to general limits table
+        // 3. Fallback to general baseline limit
         return LimitRepository.GetByUserId(userId);
     }
 

@@ -102,12 +102,29 @@ public static class DatabaseManager
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
                 date TEXT NOT NULL,
+                request_type TEXT NOT NULL DEFAULT 'extension',
+                target_date TEXT,
                 requested_minutes INTEGER NOT NULL,
+                requested_start TEXT,
+                requested_end TEXT,
                 reason TEXT NOT NULL DEFAULT '',
                 status TEXT NOT NULL DEFAULT 'PENDING',
+                decline_reason TEXT,
                 created_at TEXT NOT NULL,
                 resolved_at TEXT,
                 FOREIGN KEY (user_id) REFERENCES users(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS schedule_exceptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                exception_date TEXT NOT NULL,
+                daily_minutes INTEGER NOT NULL,
+                schedule_start TEXT NOT NULL,
+                schedule_end TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(user_id, exception_date),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             );
 
             CREATE TABLE IF NOT EXISTS app_usage (
@@ -164,6 +181,7 @@ public static class DatabaseManager
             CREATE INDEX IF NOT EXISTS idx_app_usage_user_date ON app_usage (user_id, date);
             CREATE INDEX IF NOT EXISTS idx_app_activity_hourly_date ON app_activity_hourly (user_id, date);
             CREATE INDEX IF NOT EXISTS idx_screen_captures_user_time ON screen_captures (user_id, timestamp);
+            CREATE INDEX IF NOT EXISTS idx_schedule_exceptions_user_date ON schedule_exceptions (user_id, exception_date);
             """;
         schemaCmd.ExecuteNonQuery();
 
@@ -176,6 +194,28 @@ public static class DatabaseManager
             using var alterCmd = connection.CreateCommand();
             alterCmd.CommandText = "ALTER TABLE usage ADD COLUMN bonus_minutes INTEGER NOT NULL DEFAULT 0;";
             alterCmd.ExecuteNonQuery();
+        }
+
+        // Migration: check if new columns exist in grace_requests table
+        var columnsToAdd = new[]
+        {
+            ("request_type", "ALTER TABLE grace_requests ADD COLUMN request_type TEXT NOT NULL DEFAULT 'extension';"),
+            ("target_date", "ALTER TABLE grace_requests ADD COLUMN target_date TEXT;"),
+            ("requested_start", "ALTER TABLE grace_requests ADD COLUMN requested_start TEXT;"),
+            ("requested_end", "ALTER TABLE grace_requests ADD COLUMN requested_end TEXT;"),
+            ("decline_reason", "ALTER TABLE grace_requests ADD COLUMN decline_reason TEXT;")
+        };
+
+        foreach (var (colName, alterSql) in columnsToAdd)
+        {
+            using var checkCol = connection.CreateCommand();
+            checkCol.CommandText = $"SELECT COUNT(*) FROM pragma_table_info('grace_requests') WHERE name = '{colName}';";
+            if (Convert.ToInt32(checkCol.ExecuteScalar()) == 0)
+            {
+                using var alter = connection.CreateCommand();
+                alter.CommandText = alterSql;
+                alter.ExecuteNonQuery();
+            }
         }
     }
 

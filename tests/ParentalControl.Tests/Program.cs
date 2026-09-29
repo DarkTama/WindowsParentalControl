@@ -245,6 +245,57 @@ var monLimitAfterDelete = ScheduleRepository.GetEffectiveLimit(user.Id, DayOfWee
 Debug.Assert(monLimitAfterDelete != null && monLimitAfterDelete.DailyMinutes == 120, "Monday should fall back to 120m baseline after deletion");
 Console.WriteLine("✅ Sparse Weekly Schedule & Baseline Fallback Verification Passed.");
 
+// 14b. Test Single-Day Schedule Exceptions & Precedence Hierarchy
+var testDate = new DateOnly(2026, 10, 15); // Thursday
+var exc = new ScheduleException
+{
+    UserId = user.Id,
+    ExceptionDate = testDate,
+    DailyMinutes = 300,
+    ScheduleStart = new TimeOnly(7, 0),
+    ScheduleEnd = new TimeOnly(23, 0),
+    CreatedAt = DateTime.Now
+};
+ScheduleExceptionRepository.Upsert(exc);
+
+var queriedExc = ScheduleExceptionRepository.GetForDate(user.Id, testDate);
+Debug.Assert(queriedExc != null && queriedExc.DailyMinutes == 300, "Queried exception should have 300m");
+
+var upcomingExcs = ScheduleExceptionRepository.GetUpcomingForUser(user.Id, new DateOnly(2026, 10, 1));
+Debug.Assert(upcomingExcs.Any(e => e.ExceptionDate == testDate), "Upcoming exceptions should include test date");
+
+// Precedence check: Exception should override baseline
+var effectiveWithExc = ScheduleRepository.GetEffectiveLimit(user.Id, testDate.DayOfWeek, testDate);
+Debug.Assert(effectiveWithExc != null && effectiveWithExc.DailyMinutes == 300, "Effective limit should use 300m exception");
+Debug.Assert(effectiveWithExc!.ScheduleEnd == new TimeOnly(23, 0), "Effective limit should use 23:00 exception curfew");
+
+// Delete exception -> fallback
+ScheduleExceptionRepository.DeleteForUserAndDate(user.Id, testDate);
+var effectiveAfterExcDelete = ScheduleRepository.GetEffectiveLimit(user.Id, testDate.DayOfWeek, testDate);
+Debug.Assert(effectiveAfterExcDelete != null && effectiveAfterExcDelete.DailyMinutes == 120, "Should fall back to 120m baseline after exception delete");
+
+// 14c. Test Schedule Change Grace Requests & Decline Reasons
+var schedReq = GraceRequestRepository.CreateScheduleChange(
+    user.Id,
+    DateOnly.FromDateTime(DateTime.Now),
+    testDate,
+    240,
+    new TimeOnly(8, 0),
+    new TimeOnly(21, 0),
+    "Study holiday");
+Debug.Assert(schedReq.RequestType == "schedule_change", "RequestType should be schedule_change");
+Debug.Assert(schedReq.TargetDate == testDate, "TargetDate should match");
+Debug.Assert(schedReq.RequestedMinutes == 240, "RequestedMinutes should be 240");
+
+GraceRequestRepository.Resolve(schedReq.Id, "DECLINED", "Belum menyelesaikan tugas sekolah");
+var resolvedSchedReq = GraceRequestRepository.GetById(schedReq.Id);
+Debug.Assert(resolvedSchedReq != null && resolvedSchedReq.Status == "DECLINED", "Status should be DECLINED");
+Debug.Assert(resolvedSchedReq!.DeclineReason == "Belum menyelesaikan tugas sekolah", "DeclineReason should match");
+
+var latestReq = GraceRequestRepository.GetLatestRequest(user.Id);
+Debug.Assert(latestReq != null && latestReq.Id == schedReq.Id, "Latest request should match");
+Console.WriteLine("✅ Schedule Exception Precedence & Extended Grace Requests Verification Passed.");
+
 // 15. Test AppVersion & UpdateService SemVer Logic
 Debug.Assert(AppVersion.Current == "1.2.1", "Current version should be 1.2.1");
 Debug.Assert(AppVersion.DisplayName == "v1.2.1", "Display name should be v1.2.1");

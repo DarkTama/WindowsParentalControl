@@ -344,6 +344,36 @@ public static class AdminPage
                             </tbody>
                         </table>
                     </div>
+                    <!-- Single-Day Schedule Exceptions Section -->
+                    <div style="border-top:1px solid #1e293b;padding-top:1rem;margin-top:1rem;margin-bottom:1.25rem">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem">
+                            <span style="font-size:0.9rem;font-weight:700;color:#f472b6">📅 Upcoming Schedule Exceptions (Pengecualian Khusus)</span>
+                        </div>
+                        <div style="border:1px solid #1e293b;border-radius:0.5rem;overflow:hidden;margin-bottom:0.75rem">
+                            <table style="width:100%;font-size:0.8rem">
+                                <thead>
+                                    <tr style="background:#090d16">
+                                        <th style="padding:0.4rem;text-align:left">Date</th>
+                                        <th style="padding:0.4rem;text-align:left">Minutes</th>
+                                        <th style="padding:0.4rem;text-align:left">Curfew Window</th>
+                                        <th style="padding:0.4rem;text-align:center">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="schExceptionsTableBody">
+                                    <tr><td colspan="4" style="text-align:center;padding:0.5rem;color:#64748b">No upcoming exceptions</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Add Exception Form -->
+                        <div style="display:flex;gap:0.4rem;flex-wrap:wrap;align-items:center;background:#090d16;padding:0.5rem;border-radius:0.4rem;border:1px solid #1e293b">
+                            <input type="date" id="newExcDate" style="background:#131c2e;border:1px solid #334155;color:#fff;padding:0.25rem 0.4rem;border-radius:0.3rem;font-size:0.75rem" />
+                            <input type="number" id="newExcMinutes" placeholder="Minutes" value="120" style="width:70px;background:#131c2e;border:1px solid #334155;color:#fff;padding:0.25rem 0.4rem;border-radius:0.3rem;font-size:0.75rem" />
+                            <input type="time" id="newExcStart" value="08:00" style="background:#131c2e;border:1px solid #334155;color:#fff;padding:0.25rem 0.4rem;border-radius:0.3rem;font-size:0.75rem" />
+                            <input type="time" id="newExcEnd" value="22:00" style="background:#131c2e;border:1px solid #334155;color:#fff;padding:0.25rem 0.4rem;border-radius:0.3rem;font-size:0.75rem" />
+                            <button type="button" class="btn btn-secondary" style="font-size:0.75rem;padding:0.25rem 0.6rem" onclick="addScheduleException()">➕ Add Exception</button>
+                        </div>
+                    </div>
 
                     <div id="schFeedback" style="display:none;padding:0.5rem;border-radius:0.4rem;font-size:0.8rem;margin-bottom:0.75rem"></div>
 
@@ -919,6 +949,7 @@ public static class AdminPage
                 }
 
                 let currentSchDays = [];
+                let currentSchExceptions = [];
 
                 async function openScheduleModal(userId, username) {
                     document.getElementById('schModalUserId').value = userId;
@@ -935,7 +966,12 @@ public static class AdminPage
                         document.getElementById('baseEnd').value = data.baseScheduleEnd;
 
                         currentSchDays = data.days;
+                        currentSchExceptions = data.upcomingExceptions || [];
                         renderScheduleDaysTable();
+                        renderScheduleExceptionsTable();
+                        const tomorrow = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+                        const dateInput = document.getElementById('newExcDate');
+                        if (dateInput && !dateInput.value) dateInput.value = tomorrow;
                         document.getElementById('scheduleModal').style.display = 'flex';
                     } catch (e) {
                         console.error('Error opening schedule modal:', e);
@@ -980,6 +1016,66 @@ public static class AdminPage
                         currentSchDays[index].scheduleEnd = document.getElementById('baseEnd').value || '22:00';
                     }
                     renderScheduleDaysTable();
+                }
+                function renderScheduleExceptionsTable() {
+                    const tbody = document.getElementById('schExceptionsTableBody');
+                    if (!currentSchExceptions || currentSchExceptions.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;padding:0.5rem;color:#64748b">No upcoming exceptions</td></tr>';
+                        return;
+                    }
+                    let html = '';
+                    for (const e of currentSchExceptions) {
+                        html += `
+                            <tr style="border-bottom:1px solid #1e293b">
+                                <td style="padding:0.4rem;font-weight:600;color:#f472b6">${e.date}</td>
+                                <td style="padding:0.4rem">${e.dailyMinutes}m</td>
+                                <td style="padding:0.4rem">${e.scheduleStart} – ${e.scheduleEnd}</td>
+                                <td style="padding:0.4rem;text-align:center">
+                                    <button type="button" class="btn btn-secondary" style="font-size:0.7rem;padding:0.15rem 0.4rem;color:#ef4444" onclick="deleteScheduleException(${e.id})">🗑️ Delete</button>
+                                </td>
+                            </tr>`;
+                    }
+                    tbody.innerHTML = html;
+                }
+
+                async function addScheduleException() {
+                    const userId = parseInt(document.getElementById('schModalUserId').value);
+                    const date = document.getElementById('newExcDate').value;
+                    const mins = parseInt(document.getElementById('newExcMinutes').value) || 120;
+                    const start = document.getElementById('newExcStart').value || '08:00';
+                    const end = document.getElementById('newExcEnd').value || '22:00';
+                    if (!date) { alert('Please select a date.'); return; }
+
+                    try {
+                        const res = await fetch('/api/admin/schedule-exception', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ userId, date, dailyMinutes: mins, scheduleStart: start, scheduleEnd: end })
+                        });
+                        if (res.ok) {
+                            openScheduleModal(userId, document.getElementById('schModalUsername').textContent);
+                        } else {
+                            const err = await res.json();
+                            alert(err.error || 'Failed to add exception');
+                        }
+                    } catch (e) {
+                        alert('Network error');
+                    }
+                }
+
+                async function deleteScheduleException(id) {
+                    if (!confirm('Are you sure you want to delete this schedule exception?')) return;
+                    const userId = parseInt(document.getElementById('schModalUserId').value);
+                    try {
+                        const res = await fetch(`/api/admin/schedule-exception?id=${id}`, { method: 'DELETE' });
+                        if (res.ok) {
+                            openScheduleModal(userId, document.getElementById('schModalUsername').textContent);
+                        } else {
+                            alert('Failed to delete exception');
+                        }
+                    } catch (e) {
+                        alert('Network error');
+                    }
                 }
 
                 function applySchedulePreset(type) {
