@@ -154,7 +154,7 @@ public static class AdminPage
                 <div class="header-brand">
                     <h1 style="margin:0">🛡️ Parental Control Remote Admin</h1>
                     <div style="display:flex;align-items:center;gap:0.5rem">
-                        <span class="badge" style="background:#1e293b;color:#94a3b8" id="versionBadge">v1.2.1</span>
+                        <span class="badge" style="background:#1e293b;color:#94a3b8" id="versionBadge">__APP_VERSION__</span>
                         <button id="btnUpdateNotice" class="badge" style="display:none;background:#15803d;color:#dcfce7;border:none;cursor:pointer;padding:0.25rem 0.6rem;font-weight:600" onclick="checkAppUpdates()">🚀 Update Available!</button>
                     </div>
                 </div>
@@ -1319,6 +1319,6 @@ public static class AdminPage
             </script>
         </body>
         </html>
-        """.Replace("v1.2.1", AppVersion.DisplayName);
+        """.Replace("__APP_VERSION__", AppVersion.DisplayName);
     }
 }

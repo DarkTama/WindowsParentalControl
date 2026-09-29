@@ -297,16 +297,16 @@ Debug.Assert(latestReq != null && latestReq.Id == schedReq.Id, "Latest request s
 Console.WriteLine("✅ Schedule Exception Precedence & Extended Grace Requests Verification Passed.");
 
 // 15. Test AppVersion & UpdateService SemVer Logic
-Debug.Assert(AppVersion.Current == "1.2.1", "Current version should be 1.2.1");
-Debug.Assert(AppVersion.DisplayName == "v1.2.1", "Display name should be v1.2.1");
+Debug.Assert(AppVersion.Current == "1.3.0", "Current version should be 1.3.0");
+Debug.Assert(AppVersion.DisplayName == "v1.3.0", "Display name should be v1.3.0");
 Debug.Assert(AppVersion.GitHubRepo == "DarkTama/WindowsParentalControl", "GitHub repo match");
 
-Debug.Assert(UpdateService.IsNewerVersion("1.3.0", "1.2.1") == true, "1.3.0 is newer than 1.2.1");
-Debug.Assert(UpdateService.IsNewerVersion("2.0.0", "1.2.1") == true, "2.0.0 is newer than 1.2.1");
-Debug.Assert(UpdateService.IsNewerVersion("1.2.2", "1.2.1") == true, "1.2.2 is newer than 1.2.1");
-Debug.Assert(UpdateService.IsNewerVersion("1.2.1", "1.2.1") == false, "1.2.1 is not newer than 1.2.1");
-Debug.Assert(UpdateService.IsNewerVersion("1.2.0", "1.2.1") == false, "1.2.0 is not newer than 1.2.1");
-Debug.Assert(UpdateService.IsNewerVersion("1.1.9", "1.2.1") == false, "1.1.9 is not newer than 1.2.1");
+Debug.Assert(UpdateService.IsNewerVersion("1.4.0", "1.3.0") == true, "1.4.0 is newer than 1.3.0");
+Debug.Assert(UpdateService.IsNewerVersion("2.0.0", "1.3.0") == true, "2.0.0 is newer than 1.3.0");
+Debug.Assert(UpdateService.IsNewerVersion("1.3.1", "1.3.0") == true, "1.3.1 is newer than 1.3.0");
+Debug.Assert(UpdateService.IsNewerVersion("1.3.0", "1.3.0") == false, "1.3.0 is not newer than 1.3.0");
+Debug.Assert(UpdateService.IsNewerVersion("1.2.1", "1.3.0") == false, "1.2.1 is not newer than 1.3.0");
+Debug.Assert(UpdateService.IsNewerVersion("1.1.9", "1.3.0") == false, "1.1.9 is not newer than 1.3.0");
 Console.WriteLine("✅ AppVersion & UpdateService SemVer Comparison Verification Passed.");
 
 var updateCheck = UpdateService.CheckForUpdatesAsync().GetAwaiter().GetResult();

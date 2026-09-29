@@ -2,7 +2,7 @@
 ; Requires Inno Setup 6.2+ (https://jrsoftware.org/isdownload.php)
 
 #define MyAppName      "Parental Control"
-#define MyAppVersion   "1.2.1"
+#define MyAppVersion   "1.3.0"
 #define MyAppPublisher "ParentalControl"
 #define MyAppExeName   "ParentalControl.Admin.exe"
 #define ServiceExeName "ParentalControl.Service.exe"
