@@ -14,7 +14,7 @@ public static class EventRepository
             INSERT INTO events (timestamp, user_sid, event_type, details)
             VALUES (@timestamp, @userSid, @eventType, @details)
             """;
-        cmd.Parameters.AddWithValue("@timestamp", DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss.fff"));
+        cmd.Parameters.AddWithValue("@timestamp", DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture));
         cmd.Parameters.AddWithValue("@userSid", userSid);
         cmd.Parameters.AddWithValue("@eventType", eventType.ToString());
         cmd.Parameters.AddWithValue("@details", details);
@@ -30,12 +30,12 @@ public static class EventRepository
         if (from.HasValue)
         {
             conditions.Add("timestamp >= @from");
-            cmd.Parameters.AddWithValue("@from", from.Value.ToString("yyyy-MM-ddTHH:mm:ss.fff"));
+            cmd.Parameters.AddWithValue("@from", from.Value.ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture));
         }
         if (to.HasValue)
         {
             conditions.Add("timestamp <= @to");
-            cmd.Parameters.AddWithValue("@to", to.Value.ToString("yyyy-MM-ddTHH:mm:ss.fff"));
+            cmd.Parameters.AddWithValue("@to", to.Value.ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture));
         }
         if (!string.IsNullOrEmpty(userSid))
         {
@@ -58,7 +58,7 @@ public static class EventRepository
 
             events.Add(new EventRecord
             {
-                Timestamp = DateTime.ParseExact(reader.GetString(0), "yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture),
+                Timestamp = DateTime.Parse(reader.GetString(0), CultureInfo.InvariantCulture),
                 UserSid = reader.GetString(1),
                 EventType = eventType,
                 Details = reader.GetString(3)
@@ -72,7 +72,7 @@ public static class EventRepository
         using var connection = DatabaseManager.CreateConnection();
         using var cmd = connection.CreateCommand();
         cmd.CommandText = "DELETE FROM events WHERE timestamp < @cutoff";
-        cmd.Parameters.AddWithValue("@cutoff", cutoff.ToString("yyyy-MM-ddTHH:mm:ss.fff"));
+        cmd.Parameters.AddWithValue("@cutoff", cutoff.ToString("yyyy-MM-ddTHH:mm:ss.fff", CultureInfo.InvariantCulture));
         return cmd.ExecuteNonQuery();
     }
 }

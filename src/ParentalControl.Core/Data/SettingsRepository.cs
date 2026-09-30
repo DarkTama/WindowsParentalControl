@@ -6,6 +6,9 @@ public static class SettingsRepository
 {
     public const string KeyTelegramBotToken = "telegram_bot_token";
     public const string KeyTelegramChatId = "telegram_chat_id";
+    public const string KeyTelegramNotifySignIn = "telegram_notify_sign_in";
+    public const string KeyTelegramNotifySignOut = "telegram_notify_sign_out";
+    public const string KeyTelegramNotifyAdminLogon = "telegram_notify_admin_logon";
     public const string KeyTotpSecret = "totp_secret";
     public const string KeyTotpEnabled = "totp_enabled";
     public const string KeyAlertIntervals = "alert_intervals"; // e.g. "15,5,1"
@@ -36,6 +39,21 @@ public static class SettingsRepository
     {
         var val = Get(KeyMaxDailyRequests, "1");
         return int.TryParse(val, out var max) && max >= 0 ? max : 1;
+    }
+
+    public static bool IsTelegramNotifySignInEnabled()
+    {
+        return Get(KeyTelegramNotifySignIn, "true") == "true";
+    }
+
+    public static bool IsTelegramNotifySignOutEnabled()
+    {
+        return Get(KeyTelegramNotifySignOut, "true") == "true";
+    }
+
+    public static bool IsTelegramNotifyAdminLogonEnabled()
+    {
+        return Get(KeyTelegramNotifyAdminLogon, "true") == "true";
     }
 
     public static void Set(string key, string value)

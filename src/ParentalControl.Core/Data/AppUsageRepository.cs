@@ -5,6 +5,48 @@ namespace ParentalControl.Core.Data;
 
 public static class AppUsageRepository
 {
+    private sealed class ActivityAccumulator
+    {
+        public int Seconds;
+        public DateOnly LastDate;
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<(int UserId, string ProcessName), ActivityAccumulator> _accumulators = new();
+
+    public static void ResetAccumulators()
+    {
+        _accumulators.Clear();
+    }
+
+    public static void AddSeconds(int userId, DateOnly date, string processName, string windowTitle, int seconds, int hour = -1)
+    {
+        if (string.IsNullOrWhiteSpace(processName) || seconds <= 0) return;
+
+        var key = (userId, processName.ToLowerInvariant());
+        var acc = _accumulators.GetOrAdd(key, _ => new ActivityAccumulator());
+        int minutesToAdd = 0;
+        lock (acc)
+        {
+            if (acc.LastDate != date)
+            {
+                acc.LastDate = date;
+                acc.Seconds = 0;
+            }
+
+            acc.Seconds += seconds;
+            if (acc.Seconds >= 60)
+            {
+                minutesToAdd = acc.Seconds / 60;
+                acc.Seconds %= 60;
+            }
+        }
+
+        if (minutesToAdd > 0)
+        {
+            AddMinutes(userId, date, processName, windowTitle, minutesToAdd, hour);
+        }
+    }
+
     public static void AddMinutes(int userId, DateOnly date, string processName, string windowTitle, int minutes, int hour = -1)
     {
         if (string.IsNullOrWhiteSpace(processName) || minutes <= 0) return;
@@ -163,7 +205,8 @@ public static class AppUsageRepository
             var m = Convert.ToInt32(reader.GetInt64(1));
             if (h >= 0 && h < 24)
             {
-                distribution[h] = m;
+                var maxForSlot = Math.Max(60, (to.DayNumber - from.DayNumber + 1) * 60);
+                distribution[h] = Math.Clamp(m, 0, maxForSlot);
             }
         }
         return distribution;

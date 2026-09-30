@@ -118,6 +118,14 @@ public partial class SettingsViewModel : ObservableObject
     [ObservableProperty]
     private string _msgBonusGranted = string.Empty;
 
+    [ObservableProperty]
+    private bool _telegramNotifySignIn = true;
+
+    [ObservableProperty]
+    private bool _telegramNotifySignOut = true;
+
+    [ObservableProperty]
+    private bool _telegramNotifyAdminLogon = true;
     public SettingsViewModel(Action navigateBack)
     {
         _navigateBack = navigateBack;
@@ -128,6 +136,9 @@ public partial class SettingsViewModel : ObservableObject
     {
         TelegramBotToken = SettingsRepository.Get(SettingsRepository.KeyTelegramBotToken);
         TelegramChatId = SettingsRepository.Get(SettingsRepository.KeyTelegramChatId);
+        TelegramNotifySignIn = SettingsRepository.IsTelegramNotifySignInEnabled();
+        TelegramNotifySignOut = SettingsRepository.IsTelegramNotifySignOutEnabled();
+        TelegramNotifyAdminLogon = SettingsRepository.IsTelegramNotifyAdminLogonEnabled();
         AlertIntervals = SettingsRepository.Get(SettingsRepository.KeyAlertIntervals, "15,5,1");
         MaxDailyRequests = SettingsRepository.GetMaxDailyRequests();
         IsTotpEnabled = SettingsRepository.Get(SettingsRepository.KeyTotpEnabled, "false") == "true";
@@ -324,6 +335,9 @@ public partial class SettingsViewModel : ObservableObject
     {
         SettingsRepository.Set(SettingsRepository.KeyTelegramBotToken, TelegramBotToken.Trim());
         SettingsRepository.Set(SettingsRepository.KeyTelegramChatId, TelegramChatId.Trim());
+        SettingsRepository.Set(SettingsRepository.KeyTelegramNotifySignIn, TelegramNotifySignIn ? "true" : "false");
+        SettingsRepository.Set(SettingsRepository.KeyTelegramNotifySignOut, TelegramNotifySignOut ? "true" : "false");
+        SettingsRepository.Set(SettingsRepository.KeyTelegramNotifyAdminLogon, TelegramNotifyAdminLogon ? "true" : "false");
         SettingsRepository.Set(SettingsRepository.KeyAlertIntervals, AlertIntervals.Trim());
         SettingsRepository.Set(SettingsRepository.KeyMaxDailyRequests, MaxDailyRequests.ToString());
         SettingsRepository.Set(SettingsRepository.KeyTotpEnabled, IsTotpEnabled ? "true" : "false");

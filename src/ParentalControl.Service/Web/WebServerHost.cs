@@ -506,6 +506,11 @@ public sealed class WebServerHost : BackgroundService
                 var username = doc.RootElement.GetProperty("username").GetString();
                 var processName = doc.RootElement.GetProperty("processName").GetString();
                 var windowTitle = doc.RootElement.TryGetProperty("windowTitle", out var wt) ? wt.GetString() ?? "" : "";
+                var durationSeconds = 20;
+                if (doc.RootElement.TryGetProperty("durationSeconds", out var dsProp) && dsProp.TryGetInt32(out var dsVal) && dsVal > 0)
+                {
+                    durationSeconds = Math.Clamp(dsVal, 1, 300);
+                }
 
                 if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(processName))
                 {
@@ -515,9 +520,17 @@ public sealed class WebServerHost : BackgroundService
                 var user = UserRepository.GetByUsername(username);
                 if (user != null && user.IsRestricted)
                 {
+                    var isSessionLocked = _sessionTracker.ActiveSessions.Values
+                        .Any(s => string.Equals(s.Username, username, StringComparison.OrdinalIgnoreCase) && s.IsLocked);
+
+                    if (isSessionLocked)
+                    {
+                        return Results.Ok(new { success = true, skipped = "session_locked" });
+                    }
+
                     _liveActivities[user.Username] = (processName, windowTitle, DateTime.Now);
                     var today = DateOnly.FromDateTime(DateTime.Now);
-                    AppUsageRepository.AddMinutes(user.Id, today, processName, windowTitle, 1);
+                    AppUsageRepository.AddSeconds(user.Id, today, processName, windowTitle, durationSeconds);
                 }
 
                 return Results.Ok(new { success = true });
@@ -1311,6 +1324,51 @@ public sealed class WebServerHost : BackgroundService
 
             var (success, msg) = await UpdateService.DownloadAndApplyUpdateAsync(downloadUrl);
             return Results.Ok(new { success, message = msg });
+        });
+
+        // Admin Settings GET API
+        app.MapGet("/api/admin/settings", (HttpContext ctx) =>
+        {
+            if (!CheckAuth(ctx)) return Results.Unauthorized();
+            return Results.Ok(new
+            {
+                telegramConfigured = !string.IsNullOrWhiteSpace(SettingsRepository.Get(SettingsRepository.KeyTelegramBotToken)) &&
+                                     !string.IsNullOrWhiteSpace(SettingsRepository.Get(SettingsRepository.KeyTelegramChatId)),
+                telegramNotifySignIn = SettingsRepository.IsTelegramNotifySignInEnabled(),
+                telegramNotifySignOut = SettingsRepository.IsTelegramNotifySignOutEnabled(),
+                telegramNotifyAdminLogon = SettingsRepository.IsTelegramNotifyAdminLogonEnabled()
+            });
+        });
+
+        // Admin Settings POST API
+        app.MapPost("/api/admin/settings", async (HttpContext ctx) =>
+        {
+            if (!CheckAuth(ctx)) return Results.Unauthorized();
+            try
+            {
+                using var reader = new StreamReader(ctx.Request.Body);
+                var body = await reader.ReadToEndAsync();
+                var doc = JsonDocument.Parse(body);
+
+                if (doc.RootElement.TryGetProperty("telegramNotifySignIn", out var si))
+                {
+                    SettingsRepository.Set(SettingsRepository.KeyTelegramNotifySignIn, si.GetBoolean() ? "true" : "false");
+                }
+                if (doc.RootElement.TryGetProperty("telegramNotifySignOut", out var so))
+                {
+                    SettingsRepository.Set(SettingsRepository.KeyTelegramNotifySignOut, so.GetBoolean() ? "true" : "false");
+                }
+                if (doc.RootElement.TryGetProperty("telegramNotifyAdminLogon", out var al))
+                {
+                    SettingsRepository.Set(SettingsRepository.KeyTelegramNotifyAdminLogon, al.GetBoolean() ? "true" : "false");
+                }
+
+                return Results.Ok(new { success = true });
+            }
+            catch
+            {
+                return Results.BadRequest(new { error = "Invalid payload" });
+            }
         });
 
         _logger.Information("Starting embedded WebServer on http://0.0.0.0:5050");

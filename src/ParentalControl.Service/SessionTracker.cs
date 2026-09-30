@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using ParentalControl.Core.Data;
 using ParentalControl.Core.Models;
 using ParentalControl.Core.Platform;
+using ParentalControl.Core.Services;
 namespace ParentalControl.Service;
 
 public sealed record ActiveSession(int SessionId, string UserSid, string Username, DateTime LastTick, bool IsLocked = false);
@@ -11,9 +12,13 @@ public sealed class SessionTracker
     private readonly ConcurrentDictionary<int, ActiveSession> _activeSessions = new();
     private volatile bool _isAwake = true;
     private readonly Serilog.ILogger _logger;
+    private readonly TelegramBotService? _telegramBotService;
 
-    public SessionTracker(Serilog.ILogger logger)
+    public SessionTracker(Serilog.ILogger logger) : this(null, logger) { }
+
+    public SessionTracker(TelegramBotService? telegramBotService, Serilog.ILogger logger)
     {
+        _telegramBotService = telegramBotService;
         _logger = logger;
     }
 
@@ -77,6 +82,11 @@ public sealed class SessionTracker
             _activeSessions.TryAdd(sessionId, new ActiveSession(sessionId, sid, username, DateTime.Now));
             EventRepository.LogEvent(sid, EventType.LOGIN);
             _logger.Information("User logged in (unrestricted): {Username}", username);
+
+            if (SettingsRepository.IsTelegramNotifyAdminLogonEnabled() && _telegramBotService != null)
+            {
+                _ = Task.Run(() => _telegramBotService.SendAdminSignInAlertAsync(sessionId, username, Environment.MachineName, DateTime.Now));
+            }
             return;
         }
 
@@ -124,6 +134,14 @@ public sealed class SessionTracker
         EventRepository.LogEvent(sid, EventType.LOGIN, loginDetail);
         _logger.Information("User logged in (restricted): {Username}", username);
         EnsureAgentRunning(sessionId);
+
+        if (SettingsRepository.IsTelegramNotifySignInEnabled() && _telegramBotService != null)
+        {
+            var remaining = limit != null ? Math.Max(0, (limit.DailyMinutes + (usage?.BonusMinutes ?? 0)) - (usage?.MinutesUsed ?? 0)) : 0;
+            var start = limit?.ScheduleStart;
+            var end = limit?.ScheduleEnd;
+            _ = Task.Run(() => _telegramBotService.SendUserSignInNotificationAsync(username, Environment.MachineName, DateTime.Now, remaining, start, end));
+        }
     }
 
     public void OnUserLogoff(int sessionId)
@@ -133,6 +151,14 @@ public sealed class SessionTracker
             FlushSessionTime(session);
             EventRepository.LogEvent(session.UserSid, EventType.LOGOUT);
             _logger.Information("User logged off: {Username}", session.Username);
+            var user = UserRepository.GetBySid(session.UserSid);
+            if (user != null && user.IsRestricted && SettingsRepository.IsTelegramNotifySignOutEnabled() && _telegramBotService != null)
+            {
+                var today = DateOnly.FromDateTime(DateTime.Now);
+                var usage = UsageRepository.GetUsage(user.Id, today);
+                var used = usage?.MinutesUsed ?? 0;
+                _ = Task.Run(() => _telegramBotService.SendUserSignOutNotificationAsync(session.Username, Environment.MachineName, DateTime.Now, used));
+            }
         }
     }
 

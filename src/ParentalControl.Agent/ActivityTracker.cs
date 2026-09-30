@@ -89,15 +89,19 @@ public static class ActivityTracker
             var (process, title) = SampleForegroundWindow();
             if (process == "Unknown" || string.IsNullOrWhiteSpace(process)) return;
 
-            // Skip bare explorer / shell desktop clicks
+            // Skip bare explorer / shell desktop clicks or lock screens
             if (process.Equals("explorer", StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(title))
+                return;
+            if (process.Equals("LockApp", StringComparison.OrdinalIgnoreCase) ||
+                process.Equals("LogonUI", StringComparison.OrdinalIgnoreCase))
                 return;
 
             var payload = new
             {
                 username,
                 processName = process,
-                windowTitle = title
+                windowTitle = title,
+                durationSeconds = 20
             };
 
             await _httpClient.PostAsJsonAsync("http://127.0.0.1:5050/api/agent/activity", payload);

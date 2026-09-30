@@ -69,6 +69,20 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- Session Event Notification Toggles -->
+                        <TextBlock Text="🔔 Session Notification Options:" FontWeight="SemiBold" FontSize="13" Margin="0,4,0,8" Foreground="#1e293b" />
+                        <StackPanel Margin="0,0,0,16">
+                            <CheckBox Content="Notify on User Sign In (Restricted Accounts)"
+                                      IsChecked="{Binding TelegramNotifySignIn}"
+                                      Margin="0,0,0,6" />
+                            <CheckBox Content="Notify on User Sign Out (Restricted Accounts)"
+                                      IsChecked="{Binding TelegramNotifySignOut}"
+                                      Margin="0,0,0,6" />
+                            <CheckBox Content="Security Alert on Administrator Sign In (Unrestricted Accounts)"
+                                      IsChecked="{Binding TelegramNotifyAdminLogon}"
+                                      Margin="0,0,0,4" />
+                        </StackPanel>
+
                         <StackPanel Orientation="Horizontal">
                             <Button Content="Test Telegram Alert"
                                     Command="{Binding TestTelegramCommand}"

@@ -12,9 +12,9 @@ logger.Information("Parental Control Service starting");
 var builder = Host.CreateApplicationBuilder(args);
 
 builder.Services.AddSingleton(logger);
+builder.Services.AddSingleton<TelegramBotService>();
 builder.Services.AddSingleton<SessionTracker>();
 builder.Services.AddHostedService<UsageMonitorWorker>();
-builder.Services.AddSingleton<TelegramBotService>();
 builder.Services.AddHostedService<TelegramWorker>();
 builder.Services.AddHostedService<WebServerHost>();
 if (WindowsServiceHelpers.IsWindowsService())

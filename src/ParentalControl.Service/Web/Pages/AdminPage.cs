@@ -159,6 +159,7 @@ public static class AdminPage
                     </div>
                 </div>
                 <div class="actions">
+                    <button class="btn btn-secondary" onclick="openSettingsModal()">⚙️ Settings</button>
                     <button class="btn btn-secondary" onclick="checkAppUpdates()">🚀 Check Update</button>
                     <button class="btn btn-secondary" onclick="loadDashboard()">🔄 Refresh</button>
                     <a href="/api/admin/logout" class="btn btn-secondary">🚪 Logout</a>
@@ -425,6 +426,40 @@ public static class AdminPage
                     <div style="display:flex;justify-content:flex-end;gap:0.5rem;margin-top:1rem">
                         <button class="btn btn-secondary" onclick="closeUpdateModal()">Close</button>
                         <button class="btn btn-success" id="btnApplyUpdate" style="display:none" onclick="applyAppUpdate()">⚡ Download &amp; Install Now</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Settings Modal -->
+            <div id="settingsModal" class="modal-backdrop">
+                <div class="modal-box" style="max-width: 520px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem">
+                        <h3 style="color:#38bdf8;margin:0">⚙️ Notification Settings</h3>
+                        <button type="button" onclick="closeSettingsModal()" style="background:transparent;border:none;color:#94a3b8;font-size:1.2rem;cursor:pointer">✕</button>
+                    </div>
+                    <div style="font-size:0.875rem;color:#cbd5e1;margin-bottom:1rem">
+                        Configure automated Telegram push notifications for user session events.
+                    </div>
+                    <div id="settingsTelegramWarning" style="display:none;background:rgba(234,179,8,0.15);border:1px solid #ca8a04;color:#fef08a;padding:0.75rem;border-radius:0.5rem;font-size:0.8rem;margin-bottom:1rem">
+                        ⚠️ Telegram Bot Token or Chat ID is not configured yet. Configure credentials via Desktop Admin to receive messages.
+                    </div>
+                    <div style="display:flex;flex-direction:column;gap:0.75rem;margin-bottom:1.5rem">
+                        <label style="display:flex;align-items:center;gap:0.6rem;cursor:pointer">
+                            <input type="checkbox" id="cfgNotifySignIn" style="accent-color:#0284c7;width:1.1rem;height:1.1rem" />
+                            <span>Notify on User Sign In (Restricted Accounts)</span>
+                        </label>
+                        <label style="display:flex;align-items:center;gap:0.6rem;cursor:pointer">
+                            <input type="checkbox" id="cfgNotifySignOut" style="accent-color:#0284c7;width:1.1rem;height:1.1rem" />
+                            <span>Notify on User Sign Out (Restricted Accounts)</span>
+                        </label>
+                        <label style="display:flex;align-items:center;gap:0.6rem;cursor:pointer">
+                            <input type="checkbox" id="cfgNotifyAdminLogon" style="accent-color:#0284c7;width:1.1rem;height:1.1rem" />
+                            <span>Security Alert on Administrator Sign In (Unrestricted Accounts)</span>
+                        </label>
+                    </div>
+                    <div style="display:flex;justify-content:flex-end;gap:0.5rem">
+                        <button class="btn btn-secondary" onclick="closeSettingsModal()">Cancel</button>
+                        <button class="btn btn-primary" id="btnSaveSettings" onclick="saveSettingsModal()">💾 Save Settings</button>
                     </div>
                 </div>
             </div>
@@ -1309,6 +1344,55 @@ public static class AdminPage
                     } finally {
                         applyBtn.disabled = false;
                         applyBtn.textContent = '⚡ Download & Install Now';
+                    }
+                }
+
+                async function openSettingsModal() {
+                    try {
+                        const res = await fetch('/api/admin/settings');
+                        if (res.ok) {
+                            const data = await res.json();
+                            document.getElementById('cfgNotifySignIn').checked = data.telegramNotifySignIn;
+                            document.getElementById('cfgNotifySignOut').checked = data.telegramNotifySignOut;
+                            document.getElementById('cfgNotifyAdminLogon').checked = data.telegramNotifyAdminLogon;
+                            document.getElementById('settingsTelegramWarning').style.display = data.telegramConfigured ? 'none' : 'block';
+                        }
+                    } catch (e) {
+                        console.error('Error fetching settings:', e);
+                    }
+                    document.getElementById('settingsModal').style.display = 'flex';
+                }
+
+                function closeSettingsModal() {
+                    document.getElementById('settingsModal').style.display = 'none';
+                }
+
+                async function saveSettingsModal() {
+                    const saveBtn = document.getElementById('btnSaveSettings');
+                    saveBtn.disabled = true;
+                    saveBtn.textContent = '⏳ Saving...';
+                    try {
+                        const payload = {
+                            telegramNotifySignIn: document.getElementById('cfgNotifySignIn').checked,
+                            telegramNotifySignOut: document.getElementById('cfgNotifySignOut').checked,
+                            telegramNotifyAdminLogon: document.getElementById('cfgNotifyAdminLogon').checked
+                        };
+                        const res = await fetch('/api/admin/settings', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        if (res.ok) {
+                            alert('Pengaturan notifikasi berhasil disimpan.');
+                            closeSettingsModal();
+                        } else {
+                            alert('Gagal menyimpan pengaturan.');
+                        }
+                    } catch (e) {
+                        alert('Kesalahan: ' + e.message);
+                    } finally {
+                        saveBtn.disabled = false;
+                        saveBtn.textContent = '💾 Save Settings';
                     }
                 }
 

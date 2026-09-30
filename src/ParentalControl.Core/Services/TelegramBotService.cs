@@ -225,6 +225,43 @@ public sealed class TelegramBotService
             return;
         }
         var action = parts[0];
+        if (action == "admin_verify")
+        {
+            var subAction = parts[1].ToLowerInvariant(); // "self" or "lock"
+            int.TryParse(parts[2], out var targetSessionId);
+
+            if (subAction == "self")
+            {
+                await AnswerCallbackQueryAsync(botToken, callbackId, "Akses administrator diverifikasi.");
+                await EditMessageTextAsync(botToken, configuredChatId, messageId,
+                    $"✅ *Login Administrator Diverifikasi oleh Orang Tua*\n"
+                    + $"Waktu verifikasi: `{DateTime.Now:HH:mm:ss}`\n"
+                    + $"Sesi pada workstation `{Environment.MachineName}` telah dikonfirmasi aman.");
+            }
+            else if (subAction == "lock")
+            {
+                await AnswerCallbackQueryAsync(botToken, callbackId, "Workstation dikunci!");
+                if (targetSessionId > 0)
+                {
+                    SessionManager.LockSession(targetSessionId);
+                }
+                var consoleId = SessionManager.GetActiveConsoleSessionId();
+                if (consoleId >= 0 && consoleId != targetSessionId)
+                {
+                    SessionManager.LockSession(consoleId);
+                }
+
+                EventRepository.LogEvent("SYSTEM", EventType.SECURITY_ALERT,
+                    $"Workstation locked remotely via Telegram: unauthorized admin login alert on session {targetSessionId}");
+
+                await EditMessageTextAsync(botToken, configuredChatId, messageId,
+                    $"🔒 *AKSES DITOLAK: Komputer Telah Dikunci*\n"
+                    + $"Perintah penguncian darurat dieksekusi pada `{DateTime.Now:HH:mm:ss}`.\n"
+                    + $"Workstation `{Environment.MachineName}` berhasil dikunci aman.");
+            }
+            return;
+        }
+
 
         if (!int.TryParse(parts[1], out var requestId))
         {
@@ -597,6 +634,194 @@ public sealed class TelegramBotService
             return false;
         }
     }
+    public async Task<bool> SendTextMessageWithKeyboardAsync(string chatId, string text, object inlineKeyboard)
+    {
+        var token = SettingsRepository.Get(SettingsRepository.KeyTelegramBotToken);
+        if (string.IsNullOrWhiteSpace(token)) return false;
+
+        try
+        {
+            var url = $"https://api.telegram.org/bot{token}/sendMessage";
+            var payload = new
+            {
+                chat_id = chatId,
+                text,
+                parse_mode = "Markdown",
+                reply_markup = inlineKeyboard
+            };
+            using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+            var response = await HttpClient.PostAsync(url, content);
+            return response.IsSuccessStatusCode;
+        }
+        catch (Exception ex)
+        {
+            _logger.Error(ex, "Failed to send Telegram message with keyboard");
+            return false;
+        }
+    }
+
+    private async Task<bool> SendWithRetryAsync(Func<Task<bool>> sendAction, int maxRetries = 3)
+    {
+        int[] delays = { 0, 15, 30 };
+        for (int i = 0; i < maxRetries; i++)
+        {
+            if (delays[i] > 0)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(delays[i]));
+            }
+            try
+            {
+                if (await sendAction())
+                {
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning(ex, "Telegram notification attempt {Attempt} failed", i + 1);
+            }
+        }
+        return false;
+    }
+
+    public async Task<bool> SendUserSignInNotificationAsync(string username, string machineName, DateTime time, int remainingMinutes, TimeOnly? start, TimeOnly? end)
+    {
+        var token = SettingsRepository.Get(SettingsRepository.KeyTelegramBotToken);
+        var chatId = SettingsRepository.Get(SettingsRepository.KeyTelegramChatId);
+        if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(chatId)) return false;
+
+        var lang = SettingsRepository.Get(SettingsRepository.KeyLanguagePreset, "id");
+        var remainingHours = remainingMinutes / 60;
+        var remainingMins = remainingMinutes % 60;
+        var remainingStr = remainingHours > 0 ? $"{remainingHours}j {remainingMins}m" : $"{remainingMins}m";
+        if (lang == "en")
+        {
+            remainingStr = remainingHours > 0 ? $"{remainingHours}h {remainingMins}m" : $"{remainingMins}m";
+        }
+
+        var curfewStr = (start.HasValue && end.HasValue) ? $"{start.Value:HH:mm} – {end.Value:HH:mm}" : "-";
+
+        string text;
+        if (lang == "en")
+        {
+            text = $"👤 *Notification: User Signed In*\n"
+                 + $"━━━━━━━━━━━━━━━━━━━━\n"
+                 + $"• *User:* `{EscapeMarkdown(username)}`\n"
+                 + $"• *Computer:* `{EscapeMarkdown(machineName)}`\n"
+                 + $"• *Time:* `{time:HH:mm:ss}`\n"
+                 + $"• *Remaining Screen Time:* {remainingStr}\n"
+                 + $"• *Curfew Window:* {curfewStr}";
+        }
+        else
+        {
+            text = $"👤 *Pemberitahuan: Pengguna Masuk*\n"
+                 + $"━━━━━━━━━━━━━━━━━━━━\n"
+                 + $"• *Pengguna:* `{EscapeMarkdown(username)}`\n"
+                 + $"• *Komputer:* `{EscapeMarkdown(machineName)}`\n"
+                 + $"• *Waktu:* `{time:HH:mm:ss}`\n"
+                 + $"• *Sisa Waktu Layar:* {remainingStr}\n"
+                 + $"• *Jam Operasional:* {curfewStr}";
+        }
+
+        return await SendWithRetryAsync(() => SendTextMessageAsync(chatId, text));
+    }
+
+    public async Task<bool> SendUserSignOutNotificationAsync(string username, string machineName, DateTime time, int minutesUsedToday)
+    {
+        var token = SettingsRepository.Get(SettingsRepository.KeyTelegramBotToken);
+        var chatId = SettingsRepository.Get(SettingsRepository.KeyTelegramChatId);
+        if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(chatId)) return false;
+
+        var lang = SettingsRepository.Get(SettingsRepository.KeyLanguagePreset, "id");
+        var usedHours = minutesUsedToday / 60;
+        var usedMins = minutesUsedToday % 60;
+        var usedStr = usedHours > 0 ? $"{usedHours}j {usedMins}m" : $"{usedMins}m";
+        if (lang == "en")
+        {
+            usedStr = usedHours > 0 ? $"{usedHours}h {usedMins}m" : $"{usedMins}m";
+        }
+
+        string text;
+        if (lang == "en")
+        {
+            text = $"🚪 *Notification: User Signed Out*\n"
+                 + $"━━━━━━━━━━━━━━━━━━━━\n"
+                 + $"• *User:* `{EscapeMarkdown(username)}`\n"
+                 + $"• *Computer:* `{EscapeMarkdown(machineName)}`\n"
+                 + $"• *Time:* `{time:HH:mm:ss}`\n"
+                 + $"• *Screen Time Used Today:* {usedStr}";
+        }
+        else
+        {
+            text = $"🚪 *Pemberitahuan: Pengguna Keluar*\n"
+                 + $"━━━━━━━━━━━━━━━━━━━━\n"
+                 + $"• *Pengguna:* `{EscapeMarkdown(username)}`\n"
+                 + $"• *Komputer:* `{EscapeMarkdown(machineName)}`\n"
+                 + $"• *Waktu:* `{time:HH:mm:ss}`\n"
+                 + $"• *Total Waktu Terpakai Hari Ini:* {usedStr}";
+        }
+
+        return await SendWithRetryAsync(() => SendTextMessageAsync(chatId, text));
+    }
+
+    public async Task<bool> SendAdminSignInAlertAsync(int sessionId, string username, string machineName, DateTime time)
+    {
+        var token = SettingsRepository.Get(SettingsRepository.KeyTelegramBotToken);
+        var chatId = SettingsRepository.Get(SettingsRepository.KeyTelegramChatId);
+        if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(chatId)) return false;
+
+        var lang = SettingsRepository.Get(SettingsRepository.KeyLanguagePreset, "id");
+        string text;
+        object keyboard;
+
+        if (lang == "en")
+        {
+            text = $"🚨 *SECURITY ALERT: Administrator Login Detected*\n"
+                 + $"━━━━━━━━━━━━━━━━━━━━\n"
+                 + $"• *User:* `{EscapeMarkdown(username)}` (Administrator / Unrestricted)\n"
+                 + $"• *Computer:* `{EscapeMarkdown(machineName)}`\n"
+                 + $"• *Time:* `{time:HH:mm:ss}`\n\n"
+                 + $"⚠️ *Is this you?*\n"
+                 + $"If this logon was unauthorized, tap *Not Me — Lock PC!* immediately to secure your workstation.";
+
+            keyboard = new
+            {
+                inline_keyboard = new object[][]
+                {
+                    new object[]
+                    {
+                        new { text = "✅ It's Me", callback_data = $"admin_verify:self:{sessionId}" },
+                        new { text = "🔒 Not Me — Lock PC!", callback_data = $"admin_verify:lock:{sessionId}" }
+                    }
+                }
+            };
+        }
+        else
+        {
+            text = $"🚨 *PERINGATAN KEAMANAN: Login Admin Terdeteksi*\n"
+                 + $"━━━━━━━━━━━━━━━━━━━━\n"
+                 + $"• *Pengguna:* `{EscapeMarkdown(username)}` (Administrator / Hak Penuh)\n"
+                 + $"• *Komputer:* `{EscapeMarkdown(machineName)}`\n"
+                 + $"• *Waktu:* `{time:HH:mm:ss}`\n\n"
+                 + $"⚠️ *Apakah ini Anda?*\n"
+                 + $"Jika ini bukan Anda atau mencurigakan, segera ketuk tombol *Kunci Komputer* di bawah untuk mengamankan PC.";
+
+            keyboard = new
+            {
+                inline_keyboard = new object[][]
+                {
+                    new object[]
+                    {
+                        new { text = "✅ Saya Sendiri", callback_data = $"admin_verify:self:{sessionId}" },
+                        new { text = "🔒 Bukan Saya — Kunci Komputer!", callback_data = $"admin_verify:lock:{sessionId}" }
+                    }
+                }
+            };
+        }
+
+        return await SendWithRetryAsync(() => SendTextMessageWithKeyboardAsync(chatId, text, keyboard));
+    }
+
 
     private static async Task EditMessageTextAndKeyboardAsync(string botToken, string chatId, long messageId, string text, object inlineKeyboard)
     {

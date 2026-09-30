@@ -217,6 +217,36 @@ public static class DatabaseManager
                 alter.ExecuteNonQuery();
             }
         }
+
+        // Migration: repair legacy inflated app_activity_hourly and app_usage data (> 60m in 1 hour)
+        using var repairCheckCmd = connection.CreateCommand();
+        repairCheckCmd.CommandText = "SELECT COUNT(*) FROM app_activity_hourly WHERE minutes > 60;";
+        var inflatedCount = Convert.ToInt32(repairCheckCmd.ExecuteScalar());
+        if (inflatedCount > 0)
+        {
+            using var repairTrans = connection.BeginTransaction();
+            using var repairCmd = connection.CreateCommand();
+            repairCmd.Transaction = repairTrans;
+            repairCmd.CommandText = """
+                UPDATE app_activity_hourly SET minutes = 60 WHERE minutes > 60;
+                UPDATE app_usage
+                SET minutes = (
+                    SELECT COALESCE(SUM(h.minutes), 0)
+                    FROM app_activity_hourly h
+                    WHERE h.user_id = app_usage.user_id
+                      AND h.date = app_usage.date
+                      AND h.process_name = app_usage.process_name
+                )
+                WHERE EXISTS (
+                    SELECT 1 FROM app_activity_hourly h2
+                    WHERE h2.user_id = app_usage.user_id
+                      AND h2.date = app_usage.date
+                      AND h2.process_name = app_usage.process_name
+                );
+                """;
+            repairCmd.ExecuteNonQuery();
+            repairTrans.Commit();
+        }
     }
 
     public static SqliteConnection CreateConnection()

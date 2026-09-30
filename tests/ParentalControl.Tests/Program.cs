@@ -117,6 +117,44 @@ Debug.Assert(rangeApps.Count == 2, "Should have 2 unique processes");
 Debug.Assert(rangeApps.First(a => a.ProcessName == "chrome.exe").Minutes == 45, "Chrome should have 45 min total");
 Console.WriteLine("✅ Hourly Activity & App Usage Range Verification Passed.");
 
+// 9b. Test 20-Second Activity Tick Accumulation & Second-to-Minute Conversion
+AppUsageRepository.ResetAccumulators();
+var testGame = "eldenring.exe";
+AppUsageRepository.AddSeconds(user.Id, today, testGame, "ELDEN RING", 20, hour: 10);
+var check1 = AppUsageRepository.GetForUserAndDate(user.Id, today).FirstOrDefault(a => a.ProcessName == testGame);
+Debug.Assert(check1 == null, "20 seconds should not yet commit a full minute to database");
+
+AppUsageRepository.AddSeconds(user.Id, today, testGame, "ELDEN RING", 20, hour: 10);
+var check2 = AppUsageRepository.GetForUserAndDate(user.Id, today).FirstOrDefault(a => a.ProcessName == testGame);
+Debug.Assert(check2 == null, "40 seconds should not yet commit a full minute to database");
+
+AppUsageRepository.AddSeconds(user.Id, today, testGame, "ELDEN RING", 20, hour: 10);
+var check3 = AppUsageRepository.GetForUserAndDate(user.Id, today).FirstOrDefault(a => a.ProcessName == testGame);
+Debug.Assert(check3 != null && check3.Minutes == 1, "60 seconds (3x20s) must commit exactly 1 minute to database");
+
+// 9c. Test Database Migration Repair for Legacy Inflated Records (> 60m per hour)
+using (var rawConn = DatabaseManager.CreateConnection())
+{
+    using var cmd = rawConn.CreateCommand();
+    cmd.CommandText = """
+        INSERT INTO app_activity_hourly (user_id, date, hour, process_name, minutes)
+        VALUES (@userId, @date, 9, 'legacy_inflated.exe', 180)
+        ON CONFLICT(user_id, date, hour, process_name) DO UPDATE SET minutes = 180;
+        INSERT INTO app_usage (user_id, date, process_name, window_title, minutes)
+        VALUES (@userId, @date, 'legacy_inflated.exe', 'Legacy Game', 180)
+        ON CONFLICT(user_id, date, process_name) DO UPDATE SET minutes = 180;
+        """;
+    cmd.Parameters.AddWithValue("@userId", user.Id);
+    cmd.Parameters.AddWithValue("@date", today.ToString("yyyy-MM-dd"));
+    cmd.ExecuteNonQuery();
+}
+DatabaseManager.Initialize(); // Re-run migration/initialization
+var repairedHourly = AppUsageRepository.GetHourlyDistribution(user.Id, today, today);
+Debug.Assert(repairedHourly[9] == 60, "Legacy inflated 180m record in hour 9 must be repaired and clamped to 60m");
+var repairedApp = AppUsageRepository.GetForUserAndDate(user.Id, today).FirstOrDefault(a => a.ProcessName == "legacy_inflated.exe");
+Debug.Assert(repairedApp != null && repairedApp.Minutes == 60, "Legacy inflated app usage should be re-synced to match repaired hourly sum (60m)");
+Console.WriteLine("✅ 20-Second Telemetry Accumulation & Legacy Inflation Repair Passed.");
+
 // 10. Test Session Enumeration & Curfew Countdown Clamping Logic
 var loggedOnSessions = SessionManager.GetLoggedOnSessions();
 Debug.Assert(loggedOnSessions != null, "GetLoggedOnSessions should return a non-null list");
@@ -297,16 +335,16 @@ Debug.Assert(latestReq != null && latestReq.Id == schedReq.Id, "Latest request s
 Console.WriteLine("✅ Schedule Exception Precedence & Extended Grace Requests Verification Passed.");
 
 // 15. Test AppVersion & UpdateService SemVer Logic
-Debug.Assert(AppVersion.Current == "1.3.0", "Current version should be 1.3.0");
-Debug.Assert(AppVersion.DisplayName == "v1.3.0", "Display name should be v1.3.0");
+Debug.Assert(AppVersion.Current == "1.4.0", "Current version should be 1.4.0");
+Debug.Assert(AppVersion.DisplayName == "v1.4.0", "Display name should be v1.4.0");
 Debug.Assert(AppVersion.GitHubRepo == "DarkTama/WindowsParentalControl", "GitHub repo match");
 
-Debug.Assert(UpdateService.IsNewerVersion("1.4.0", "1.3.0") == true, "1.4.0 is newer than 1.3.0");
-Debug.Assert(UpdateService.IsNewerVersion("2.0.0", "1.3.0") == true, "2.0.0 is newer than 1.3.0");
-Debug.Assert(UpdateService.IsNewerVersion("1.3.1", "1.3.0") == true, "1.3.1 is newer than 1.3.0");
-Debug.Assert(UpdateService.IsNewerVersion("1.3.0", "1.3.0") == false, "1.3.0 is not newer than 1.3.0");
-Debug.Assert(UpdateService.IsNewerVersion("1.2.1", "1.3.0") == false, "1.2.1 is not newer than 1.3.0");
-Debug.Assert(UpdateService.IsNewerVersion("1.1.9", "1.3.0") == false, "1.1.9 is not newer than 1.3.0");
+Debug.Assert(UpdateService.IsNewerVersion("1.5.0", "1.4.0") == true, "1.5.0 is newer than 1.4.0");
+Debug.Assert(UpdateService.IsNewerVersion("2.0.0", "1.4.0") == true, "2.0.0 is newer than 1.4.0");
+Debug.Assert(UpdateService.IsNewerVersion("1.4.1", "1.4.0") == true, "1.4.1 is newer than 1.4.0");
+Debug.Assert(UpdateService.IsNewerVersion("1.4.0", "1.4.0") == false, "1.4.0 is not newer than 1.4.0");
+Debug.Assert(UpdateService.IsNewerVersion("1.3.0", "1.4.0") == false, "1.3.0 is not newer than 1.4.0");
+Debug.Assert(UpdateService.IsNewerVersion("1.2.1", "1.4.0") == false, "1.2.1 is not newer than 1.4.0");
 Console.WriteLine("✅ AppVersion & UpdateService SemVer Comparison Verification Passed.");
 
 var updateCheck = UpdateService.CheckForUpdatesAsync().GetAwaiter().GetResult();
@@ -330,6 +368,36 @@ else
 {
     Console.WriteLine("ℹ️ UpdateService DownloadUpdateAsync live 137MB download skipped (set TEST_LIVE_DOWNLOAD=1 to run).");
 }
+
+// 16. Test Telegram Session Notification Toggles & Security Alert Events
+Debug.Assert(SettingsRepository.IsTelegramNotifySignInEnabled() == true, "Sign-in notification should be enabled by default");
+Debug.Assert(SettingsRepository.IsTelegramNotifySignOutEnabled() == true, "Sign-out notification should be enabled by default");
+Debug.Assert(SettingsRepository.IsTelegramNotifyAdminLogonEnabled() == true, "Admin logon alert should be enabled by default");
+
+SettingsRepository.Set(SettingsRepository.KeyTelegramNotifySignIn, "false");
+SettingsRepository.Set(SettingsRepository.KeyTelegramNotifySignOut, "false");
+SettingsRepository.Set(SettingsRepository.KeyTelegramNotifyAdminLogon, "false");
+Debug.Assert(SettingsRepository.IsTelegramNotifySignInEnabled() == false, "Sign-in notification should reflect disabled state");
+Debug.Assert(SettingsRepository.IsTelegramNotifySignOutEnabled() == false, "Sign-out notification should reflect disabled state");
+Debug.Assert(SettingsRepository.IsTelegramNotifyAdminLogonEnabled() == false, "Admin logon alert should reflect disabled state");
+
+SettingsRepository.Set(SettingsRepository.KeyTelegramNotifySignIn, "true");
+SettingsRepository.Set(SettingsRepository.KeyTelegramNotifySignOut, "true");
+SettingsRepository.Set(SettingsRepository.KeyTelegramNotifyAdminLogon, "true");
+
+EventRepository.LogEvent(testSid, EventType.SECURITY_ALERT, "Unauthorized administrator login alert test");
+var secEvents = EventRepository.GetEvents(userSid: testSid);
+Debug.Assert(secEvents.Any(e => e.EventType == EventType.SECURITY_ALERT), "SECURITY_ALERT event should be stored and retrievable");
+
+var testLogger = ParentalControl.Core.Logging.LoggingConfig.CreateLogger("Test");
+var botService = new TelegramBotService(testLogger);
+var resSignIn = botService.SendUserSignInNotificationAsync("testuser", "TEST-PC", DateTime.Now, 120, new TimeOnly(8, 0), new TimeOnly(20, 0)).GetAwaiter().GetResult();
+Debug.Assert(!resSignIn, "SendUserSignInNotificationAsync should return false gracefully when token is unconfigured");
+var resSignOut = botService.SendUserSignOutNotificationAsync("testuser", "TEST-PC", DateTime.Now, 60).GetAwaiter().GetResult();
+Debug.Assert(!resSignOut, "SendUserSignOutNotificationAsync should return false gracefully when token is unconfigured");
+var resAdmin = botService.SendAdminSignInAlertAsync(1, "Administrator", "TEST-PC", DateTime.Now).GetAwaiter().GetResult();
+Debug.Assert(!resAdmin, "SendAdminSignInAlertAsync should return false gracefully when token is unconfigured");
+Console.WriteLine("✅ Telegram Session Notification Toggles & Security Alert Events Passed.");
 
 // Cleanup test user
 UserRepository.DeleteBySid(testSid);
