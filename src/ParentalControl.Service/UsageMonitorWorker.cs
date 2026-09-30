@@ -153,10 +153,9 @@ public sealed class UsageMonitorWorker : BackgroundService
                     session.Username, used, limit.DailyMinutes, usage?.BonusMinutes ?? 0);
                 EventRepository.LogEvent(session.UserSid, EventType.LIMIT_REACHED,
                     $"Used {used} of {totalAllowed} minutes (base: {limit.DailyMinutes}, bonus: {usage?.BonusMinutes ?? 0})");
-                NotificationManager.SendMessage(sessionId, "Parental Control", SettingsRepository.GetMessage(SettingsRepository.KeyMsgLimitReached), isWarning: true, timeoutSeconds: 7, wait: true);
+                NotificationManager.SendMessage(sessionId, "Parental Control", SettingsRepository.GetMessage(SettingsRepository.KeyMsgLimitReached), isWarning: true, timeoutSeconds: 5, wait: true);
                 SessionManager.LockSession(sessionId);
-                EventRepository.LogEvent(session.UserSid, EventType.SESSION_LOCKED, "Daily limit reached - workstation locked");
-                _sessionTracker.RemoveSession(sessionId);
+                _sessionTracker.OnSessionLock(sessionId, "Daily limit reached - workstation locked");
                 _sentAlerts.TryRemove(sessionId, out _);
                 continue;
             }
@@ -165,10 +164,9 @@ public sealed class UsageMonitorWorker : BackgroundService
             {
                 _logger.Information("Outside allowed schedule for {Username} (allowed {Start}-{End})",
                     session.Username, limit.ScheduleStart, limit.ScheduleEnd);
-                NotificationManager.SendMessage(sessionId, "Parental Control", SettingsRepository.GetMessage(SettingsRepository.KeyMsgCurfewReached), isWarning: true, timeoutSeconds: 7, wait: true);
+                NotificationManager.SendMessage(sessionId, "Parental Control", SettingsRepository.GetMessage(SettingsRepository.KeyMsgCurfewReached), isWarning: true, timeoutSeconds: 5, wait: true);
                 SessionManager.LockSession(sessionId);
-                EventRepository.LogEvent(session.UserSid, EventType.SESSION_LOCKED, "Outside allowed schedule - workstation locked");
-                _sessionTracker.RemoveSession(sessionId);
+                _sessionTracker.OnSessionLock(sessionId, "Outside allowed schedule - workstation locked");
                 _sentAlerts.TryRemove(sessionId, out _);
                 continue;
             }

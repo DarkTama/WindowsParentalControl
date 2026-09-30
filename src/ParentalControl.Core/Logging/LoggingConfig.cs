@@ -4,16 +4,24 @@ namespace ParentalControl.Core.Logging;
 
 public static class LoggingConfig
 {
-    private const string LogDirectory = @"C:\ProgramData\ParentalControl\logs";
+    private const string DefaultLogDirectory = @"C:\ProgramData\ParentalControl\logs";
 
-    public static ILogger CreateLogger(string componentName)
+    public static ILogger CreateLogger(string componentName, string? customLogDirectory = null)
     {
-        Directory.CreateDirectory(LogDirectory);
-
+        var logDir = customLogDirectory ?? DefaultLogDirectory;
+        try
+        {
+            Directory.CreateDirectory(logDir);
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException || ex is IOException)
+        {
+            logDir = Path.Combine(Path.GetTempPath(), "ParentalControl", "logs");
+            Directory.CreateDirectory(logDir);
+        }
         return new LoggerConfiguration()
             .MinimumLevel.Information()
             .WriteTo.File(
-                path: Path.Combine(LogDirectory, $"{componentName}-.log"),
+                path: Path.Combine(logDir, $"{componentName}-.log"),
                 rollingInterval: RollingInterval.Day,
                 retainedFileCountLimit: 30,
                 outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff} [{Level:u3}] {Message:lj}{NewLine}{Exception}")

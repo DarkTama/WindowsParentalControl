@@ -90,9 +90,11 @@ Console.WriteLine("✅ Weekly Schedule & Fallback Verification Passed.");
 // 7. Test Session Lock/Unlock Event Types
 EventRepository.LogEvent(testSid, EventType.SESSION_LOCKED, "Locked via Web Admin (15s delay)");
 EventRepository.LogEvent(testSid, EventType.SESSION_UNLOCKED, "Unlocked by user");
+EventRepository.LogEvent(testSid, EventType.LOGIN_DENIED, "Outside allowed schedule");
 var events = EventRepository.GetEvents(userSid: testSid);
 Debug.Assert(events.Any(e => e.EventType == EventType.SESSION_LOCKED), "SESSION_LOCKED event should be recorded");
 Debug.Assert(events.Any(e => e.EventType == EventType.SESSION_UNLOCKED), "SESSION_UNLOCKED event should be recorded");
+Debug.Assert(events.Any(e => e.EventType == EventType.LOGIN_DENIED), "LOGIN_DENIED event should be recorded");
 Console.WriteLine("✅ Session Lock & Unlock Events Verification Passed.");
 
 // 8. Test GetByUsername and Console Session detection
@@ -335,16 +337,17 @@ Debug.Assert(latestReq != null && latestReq.Id == schedReq.Id, "Latest request s
 Console.WriteLine("✅ Schedule Exception Precedence & Extended Grace Requests Verification Passed.");
 
 // 15. Test AppVersion & UpdateService SemVer Logic
-Debug.Assert(AppVersion.Current == "1.4.0", "Current version should be 1.4.0");
-Debug.Assert(AppVersion.DisplayName == "v1.4.0", "Display name should be v1.4.0");
+Debug.Assert(AppVersion.Current == "1.4.1", "Current version should be 1.4.1");
+Debug.Assert(AppVersion.DisplayName == "v1.4.1", "Display name should be v1.4.1");
 Debug.Assert(AppVersion.GitHubRepo == "DarkTama/WindowsParentalControl", "GitHub repo match");
 
-Debug.Assert(UpdateService.IsNewerVersion("1.5.0", "1.4.0") == true, "1.5.0 is newer than 1.4.0");
-Debug.Assert(UpdateService.IsNewerVersion("2.0.0", "1.4.0") == true, "2.0.0 is newer than 1.4.0");
-Debug.Assert(UpdateService.IsNewerVersion("1.4.1", "1.4.0") == true, "1.4.1 is newer than 1.4.0");
-Debug.Assert(UpdateService.IsNewerVersion("1.4.0", "1.4.0") == false, "1.4.0 is not newer than 1.4.0");
-Debug.Assert(UpdateService.IsNewerVersion("1.3.0", "1.4.0") == false, "1.3.0 is not newer than 1.4.0");
-Debug.Assert(UpdateService.IsNewerVersion("1.2.1", "1.4.0") == false, "1.2.1 is not newer than 1.4.0");
+Debug.Assert(UpdateService.IsNewerVersion("1.5.0", "1.4.1") == true, "1.5.0 is newer than 1.4.1");
+Debug.Assert(UpdateService.IsNewerVersion("2.0.0", "1.4.1") == true, "2.0.0 is newer than 1.4.1");
+Debug.Assert(UpdateService.IsNewerVersion("1.4.2", "1.4.1") == true, "1.4.2 is newer than 1.4.1");
+Debug.Assert(UpdateService.IsNewerVersion("1.4.1", "1.4.1") == false, "1.4.1 is not newer than 1.4.1");
+Debug.Assert(UpdateService.IsNewerVersion("1.4.0", "1.4.1") == false, "1.4.0 is not newer than 1.4.1");
+Debug.Assert(UpdateService.IsNewerVersion("1.3.0", "1.4.1") == false, "1.3.0 is not newer than 1.4.1");
+Debug.Assert(UpdateService.IsNewerVersion("1.2.1", "1.4.1") == false, "1.2.1 is not newer than 1.4.1");
 Console.WriteLine("✅ AppVersion & UpdateService SemVer Comparison Verification Passed.");
 
 var updateCheck = UpdateService.CheckForUpdatesAsync().GetAwaiter().GetResult();

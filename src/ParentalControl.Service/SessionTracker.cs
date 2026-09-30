@@ -10,6 +10,7 @@ public sealed record ActiveSession(int SessionId, string UserSid, string Usernam
 public sealed class SessionTracker
 {
     private readonly ConcurrentDictionary<int, ActiveSession> _activeSessions = new();
+    private readonly ConcurrentDictionary<int, DateTime> _lastUnlockRejectNotification = new();
     private volatile bool _isAwake = true;
     private readonly Serilog.ILogger _logger;
     private readonly TelegramBotService? _telegramBotService;
@@ -101,9 +102,10 @@ public sealed class SessionTracker
             {
                 _logger.Information("Login denied (outside schedule): {Username}", username);
                 EventRepository.LogEvent(sid, EventType.LOGIN_DENIED, "Outside allowed schedule");
-                Thread.Sleep(500);
-                NotificationManager.SendMessage(sessionId, "Parental Control", SettingsRepository.GetMessage(SettingsRepository.KeyMsgLoginDeniedCurfew), isWarning: true, timeoutSeconds: 7, wait: true);
-                SessionManager.LockSession(sessionId);
+                Thread.Sleep(300);
+                NotificationManager.SendMessage(sessionId, "Parental Control", SettingsRepository.GetMessage(SettingsRepository.KeyMsgLoginDeniedCurfew), isWarning: true, timeoutSeconds: 5, wait: true);
+                SessionManager.ForceLogoff(sessionId);
+                _activeSessions.TryRemove(sessionId, out _);
                 return;
             }
 
@@ -114,9 +116,10 @@ public sealed class SessionTracker
             {
                 _logger.Information("Login denied (limit reached): {Username}", username);
                 EventRepository.LogEvent(sid, EventType.LOGIN_DENIED, "Daily limit already reached");
-                Thread.Sleep(500);
-                NotificationManager.SendMessage(sessionId, "Parental Control", SettingsRepository.GetMessage(SettingsRepository.KeyMsgLoginDeniedLimit), isWarning: true, timeoutSeconds: 7, wait: true);
-                SessionManager.LockSession(sessionId);
+                Thread.Sleep(300);
+                NotificationManager.SendMessage(sessionId, "Parental Control", SettingsRepository.GetMessage(SettingsRepository.KeyMsgLoginDeniedLimit), isWarning: true, timeoutSeconds: 5, wait: true);
+                SessionManager.ForceLogoff(sessionId);
+                _activeSessions.TryRemove(sessionId, out _);
                 return;
             }
         }
@@ -146,6 +149,7 @@ public sealed class SessionTracker
 
     public void OnUserLogoff(int sessionId)
     {
+        _lastUnlockRejectNotification.TryRemove(sessionId, out _);
         if (_activeSessions.TryRemove(sessionId, out var session))
         {
             FlushSessionTime(session);
@@ -205,6 +209,18 @@ public sealed class SessionTracker
             EventRepository.LogEvent(session.UserSid, EventType.SESSION_LOCKED, reason);
             _logger.Information("Session {SessionId} ({Username}) locked: {Reason}", sessionId, session.Username, reason);
         }
+        else
+        {
+            var username = SessionManager.GetSessionUsername(sessionId);
+            var sid = SessionManager.GetSessionUserSid(sessionId);
+            if (username != null && sid != null)
+            {
+                UserRepository.GetBySid(sid);
+                _activeSessions.TryAdd(sessionId, new ActiveSession(sessionId, sid, username, DateTime.Now, true));
+                EventRepository.LogEvent(sid, EventType.SESSION_LOCKED, reason);
+                _logger.Information("Session {SessionId} ({Username}) tracked as locked: {Reason}", sessionId, username, reason);
+            }
+        }
     }
 
     public void OnSessionUnlock(int sessionId)
@@ -237,25 +253,33 @@ public sealed class SessionTracker
 
             if (limit is not null)
             {
-                if (nowTime < limit.ScheduleStart || nowTime >= limit.ScheduleEnd)
-                {
-                    _logger.Information("Unlock rejected (curfew): {Username} on session {SessionId}", session.Username, sessionId);
-                    EventRepository.LogEvent(session.UserSid, EventType.LOGIN_DENIED, "Outside allowed schedule on unlock");
-                    Thread.Sleep(300);
-                    NotificationManager.SendMessage(sessionId, "Parental Control", "Waktu jadwal bermain belum dimulai atau telah berakhir. Sesi dikunci kembali.", isWarning: true, timeoutSeconds: 7, wait: true);
-                    SessionManager.LockSession(sessionId);
-                    return;
-                }
-
-                // today already defined
                 var usage = UsageRepository.GetUsage(user.Id, today);
                 var totalAllowed = limit.DailyMinutes + (usage?.BonusMinutes ?? 0);
-                if (usage is not null && usage.MinutesUsed >= totalAllowed)
+                var isCurfewExpired = nowTime < limit.ScheduleStart || nowTime >= limit.ScheduleEnd;
+                var isLimitExpired = usage is not null && usage.MinutesUsed >= totalAllowed;
+
+                if (isCurfewExpired || isLimitExpired)
                 {
-                    _logger.Information("Unlock rejected (limit reached): {Username} on session {SessionId}", session.Username, sessionId);
-                    EventRepository.LogEvent(session.UserSid, EventType.LOGIN_DENIED, "Daily limit reached on unlock");
-                    Thread.Sleep(300);
-                    NotificationManager.SendMessage(sessionId, "Parental Control", "Waktu layar hari ini telah habis. Sesi dikunci kembali.", isWarning: true, timeoutSeconds: 7, wait: true);
+                    var reason = isCurfewExpired ? "Outside allowed schedule on unlock" : "Daily limit reached on unlock";
+                    var message = isCurfewExpired
+                        ? SettingsRepository.GetMessage(SettingsRepository.KeyMsgLoginDeniedCurfew)
+                        : SettingsRepository.GetMessage(SettingsRepository.KeyMsgLoginDeniedLimit);
+
+                    _logger.Information("Unlock rejected ({Reason}): {Username} on session {SessionId}", reason, session.Username, sessionId);
+                    EventRepository.LogEvent(session.UserSid, EventType.LOGIN_DENIED, reason);
+
+                    _activeSessions[sessionId] = session with { IsLocked = true, LastTick = DateTime.Now };
+
+                    var now = DateTime.Now;
+                    var shouldNotify = !_lastUnlockRejectNotification.TryGetValue(sessionId, out var lastTime) || (now - lastTime) > TimeSpan.FromSeconds(10);
+
+                    if (shouldNotify)
+                    {
+                        _lastUnlockRejectNotification[sessionId] = now;
+                        Thread.Sleep(300);
+                        NotificationManager.SendMessage(sessionId, "Parental Control", message, isWarning: true, timeoutSeconds: 5, wait: true);
+                    }
+
                     SessionManager.LockSession(sessionId);
                     return;
                 }
