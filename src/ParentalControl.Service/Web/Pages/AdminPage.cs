@@ -314,6 +314,44 @@ public static class AdminPage
                 </div>
             </div>
 
+            <!-- ═══ INTERACTIVE PROMPT MODAL ═══ -->
+            <div id="promptModal" class="modal-backdrop">
+                <div class="modal-box">
+                    <h3 style="color:#38bdf8;margin-bottom:0.75rem">💬 Kirim Pesan Interaktif ke <span id="modalPromptUser">User</span></h3>
+                    <p style="font-size:0.85rem;color:#cbd5e1;margin-bottom:1rem">
+                        Pesan akan muncul di layar desktop komputer pengguna dengan tombol Ya / Tidak dan batas waktu respon 120 detik.
+                    </p>
+                    <label style="display:block;font-size:0.8rem;color:#94a3b8;margin-bottom:0.35rem">Isi Pesan:</label>
+                    <textarea id="promptMessageInput" rows="3" style="width:100%;background:#090d16;border:1px solid #334155;color:#f8fafc;padding:0.6rem;border-radius:0.4rem;margin-bottom:1rem;resize:vertical" placeholder="Contoh: Waktunya makan siang ya?"></textarea>
+
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.75rem;margin-bottom:1rem">
+                        <div>
+                            <label style="display:block;font-size:0.8rem;color:#94a3b8;margin-bottom:0.35rem">Layar Tujuan (Monitor):</label>
+                            <select id="promptMonitorSelect" style="width:100%;background:#090d16;border:1px solid #334155;color:#f8fafc;padding:0.5rem;border-radius:0.4rem">
+                                <option value="-1">Otomatis (Layar Aktif)</option>
+                                <option value="0">Monitor 1 (Utama)</option>
+                                <option value="1">Monitor 2 (Sekunder)</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style="display:block;font-size:0.8rem;color:#94a3b8;margin-bottom:0.35rem">Tingkat Prioritas:</label>
+                            <select id="promptUrgencySelect" style="width:100%;background:#090d16;border:1px solid #334155;color:#f8fafc;padding:0.5rem;border-radius:0.4rem">
+                                <option value="NORMAL">Biasa (Normal)</option>
+                                <option value="URGENT">🚨 Mendesak (Urgent Sound)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <label style="display:block;font-size:0.8rem;color:#94a3b8;margin-bottom:0.35rem">Pilihan Kustom (Opsional, pisahkan dengan |):</label>
+                    <input id="promptCustomOptionsInput" type="text" style="width:100%;background:#090d16;border:1px solid #334155;color:#f8fafc;padding:0.5rem;border-radius:0.4rem;margin-bottom:1.25rem" placeholder="Contoh: Sekarang|Nanti 10m (Kosongkan untuk preset default)" />
+
+                    <div style="display:flex;justify-content:flex-end;gap:0.5rem">
+                        <button class="btn btn-secondary" onclick="closePromptModal()">Batal</button>
+                        <button class="btn btn-primary" onclick="confirmSendPrompt()">Kirim Pesan 📤</button>
+                    </div>
+                </div>
+            </div>
+
             <!-- ═══ CAPTURE LIGHTBOX MODAL ═══ -->
             <div id="lightboxModal" class="modal-backdrop" onclick="closeCaptureLightbox()">
                 <div style="position:relative;max-width:94vw;max-height:94vh;display:flex;align-items:center;justify-content:center" onclick="event.stopPropagation()">
@@ -456,6 +494,11 @@ public static class AdminPage
                             <input type="checkbox" id="cfgNotifyAdminLogon" style="accent-color:#0284c7;width:1.1rem;height:1.1rem" />
                             <span>Security Alert on Administrator Sign In (Unrestricted Accounts)</span>
                         </label>
+
+                        <div style="margin-top:0.5rem">
+                            <label style="display:block;font-size:0.8rem;color:#94a3b8;margin-bottom:0.35rem">Preset Alasan Pesan Interaktif (satu baris per alasan):</label>
+                            <textarea id="cfgPromptPresets" rows="4" style="width:100%;background:#090d16;border:1px solid #334155;color:#f8fafc;padding:0.6rem;border-radius:0.4rem;font-size:0.85rem;resize:vertical"></textarea>
+                        </div>
                     </div>
                     <div style="display:flex;justify-content:flex-end;gap:0.5rem">
                         <button class="btn btn-secondary" onclick="closeSettingsModal()">Cancel</button>
@@ -543,6 +586,7 @@ public static class AdminPage
                                 <td><span style="color:#64748b">—</span></td>
                                 <td>
                                     <div style="display:flex;gap:0.35rem;flex-wrap:wrap">
+                                        <button class="btn" style="padding:0.25rem 0.5rem;background:#0284c7;color:white" onclick="openPromptModal('${s.username}')">💬 Tanya</button>
                                         <button class="btn btn-warning" style="padding:0.25rem 0.5rem" onclick="openLockModal(${s.sessionId}, '${s.username}')">🔒 Lock</button>
                                         <button class="btn btn-danger" style="padding:0.25rem 0.5rem" onclick="forceLogoff(${s.sessionId})">Logoff</button>
                                     </div>
@@ -559,6 +603,7 @@ public static class AdminPage
                                 <td>${s.curfew}</td>
                                 <td>
                                     <div style="display:flex;gap:0.35rem;flex-wrap:wrap">
+                                        <button class="btn" style="padding:0.25rem 0.5rem;background:#0284c7;color:white" onclick="openPromptModal('${s.username}')">💬 Tanya</button>
                                         <button class="btn btn-primary" style="padding:0.25rem 0.5rem" onclick="captureSessionScreen('${s.username}')">📸 Screen</button>
                                         <button class="btn btn-secondary" style="padding:0.25rem 0.5rem" onclick="openScheduleModal(${s.userId}, '${s.username}')">📅 Schedule</button>
                                         <button class="btn btn-warning" style="padding:0.25rem 0.5rem" onclick="openLockModal(${s.sessionId}, '${s.username}')">🔒 Lock</button>
@@ -764,6 +809,51 @@ public static class AdminPage
                 function closeLockModal() {
                     document.getElementById('lockModal').style.display = 'none';
                     targetLockSessionId = null;
+                }
+
+                let targetPromptUsername = null;
+                function openPromptModal(username) {
+                    targetPromptUsername = username;
+                    document.getElementById('modalPromptUser').textContent = username;
+                    document.getElementById('promptMessageInput').value = '';
+                    document.getElementById('promptCustomOptionsInput').value = '';
+                    document.getElementById('promptModal').style.display = 'flex';
+                }
+
+                function closePromptModal() {
+                    document.getElementById('promptModal').style.display = 'none';
+                    targetPromptUsername = null;
+                }
+
+                async function confirmSendPrompt() {
+                    if (!targetPromptUsername) return;
+                    const message = document.getElementById('promptMessageInput').value.trim();
+                    if (!message) {
+                        alert('Isi pesan tidak boleh kosong.');
+                        return;
+                    }
+                    const targetDisplay = parseInt(document.getElementById('promptMonitorSelect').value, 10);
+                    const urgency = document.getElementById('promptUrgencySelect').value;
+                    const customOptions = document.getElementById('promptCustomOptionsInput').value.trim() || null;
+                    const username = targetPromptUsername;
+                    closePromptModal();
+
+                    try {
+                        const res = await fetch('/api/admin/prompt/send', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ username, message, urgency, targetDisplay, customOptions })
+                        });
+                        if (res.ok) {
+                            alert(`Pesan interaktif berhasil dikirim ke ${username}.`);
+                            loadDashboard();
+                        } else {
+                            const err = await res.json();
+                            alert(`Gagal mengirim pesan: ${err.error || 'Terjadi kesalahan'}`);
+                        }
+                    } catch (e) {
+                        alert('Gagal mengirim pesan: ' + e);
+                    }
                 }
 
                 async function confirmLockSession() {
@@ -1355,6 +1445,7 @@ public static class AdminPage
                             document.getElementById('cfgNotifySignIn').checked = data.telegramNotifySignIn;
                             document.getElementById('cfgNotifySignOut').checked = data.telegramNotifySignOut;
                             document.getElementById('cfgNotifyAdminLogon').checked = data.telegramNotifyAdminLogon;
+                            document.getElementById('cfgPromptPresets').value = data.promptResponsePresets || '';
                             document.getElementById('settingsTelegramWarning').style.display = data.telegramConfigured ? 'none' : 'block';
                         }
                     } catch (e) {
@@ -1375,7 +1466,8 @@ public static class AdminPage
                         const payload = {
                             telegramNotifySignIn: document.getElementById('cfgNotifySignIn').checked,
                             telegramNotifySignOut: document.getElementById('cfgNotifySignOut').checked,
-                            telegramNotifyAdminLogon: document.getElementById('cfgNotifyAdminLogon').checked
+                            telegramNotifyAdminLogon: document.getElementById('cfgNotifyAdminLogon').checked,
+                            promptResponsePresets: document.getElementById('cfgPromptPresets').value
                         };
                         const res = await fetch('/api/admin/settings', {
                             method: 'POST',

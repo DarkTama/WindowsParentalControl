@@ -6,6 +6,14 @@ using System.Windows.Threading;
 
 namespace ParentalControl.Agent;
 
+public sealed record ActivePromptDto(
+    int id,
+    string message,
+    string urgency,
+    int targetDisplay,
+    int timeoutSeconds,
+    List<string>? options);
+
 public sealed record AgentStatusResponse(
     string? username,
     bool isRestricted,
@@ -17,7 +25,8 @@ public sealed record AgentStatusResponse(
     bool isCurfewClamped = false,
     int? lastDeclinedId = null,
     string? lastDeclinedReason = null,
-    DateTime? lastDeclinedTime = null);
+    DateTime? lastDeclinedTime = null,
+    ActivePromptDto? activePrompt = null);
 
 public sealed class AgentController : IDisposable
 {
@@ -31,6 +40,8 @@ public sealed class AgentController : IDisposable
     private int _currentWatchInterval;
     private bool _disposed;
     private int? _lastShownDeclinedId;
+    private int? _lastHandledPromptId;
+    private PromptDialogWindow? _activePromptDialog;
 
     public AgentController(System.Windows.Application app)
     {
@@ -118,6 +129,41 @@ public sealed class AgentController : IDisposable
                 $"http://127.0.0.1:5050/api/agent/status?user={username}");
 
             if (status == null) return;
+
+            // Check for interactive prompt from parent/admin (all accounts)
+            if (status.activePrompt != null && status.activePrompt.id != _lastHandledPromptId)
+            {
+                _lastHandledPromptId = status.activePrompt.id;
+                var prompt = status.activePrompt;
+
+                _app.Dispatcher.Invoke(() =>
+                {
+                    _activePromptDialog?.Close();
+                    _activePromptDialog = new PromptDialogWindow(
+                        prompt.id,
+                        prompt.message,
+                        prompt.urgency,
+                        prompt.targetDisplay,
+                        prompt.timeoutSeconds,
+                        prompt.options,
+                        async (resp, reason, elapsed) =>
+                        {
+                            try
+                            {
+                                var payload = new
+                                {
+                                    promptId = prompt.id,
+                                    response = resp,
+                                    reason,
+                                    turnaroundSeconds = elapsed
+                                };
+                                await _httpClient.PostAsJsonAsync("http://127.0.0.1:5050/api/agent/prompt/respond", payload);
+                            }
+                            catch { }
+                        });
+                    _activePromptDialog.Show();
+                });
+            }
 
             if (!status.isRestricted)
             {

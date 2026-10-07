@@ -112,3 +112,19 @@ A per-user JSON configuration document stored at `%LOCALAPPDATA%\ParentalControl
 
 ### Decline Toast
 An acrylic slide-out notification card displayed by the Session Agent for 8 seconds upon receipt of an administrative rejection notice, communicating the specific Decline Reason directly into the user session.
+
+### Interactive Session Prompt
+An administrative message dispatched into an active user session requiring user acknowledgement (confirmation or decline with an optional explanatory reason) within a defined countdown window.
+
+### Prompt Turnaround Duration
+The elapsed duration between the initial presentation of an Interactive Session Prompt on the user screen and the receipt of the user response or expiration timeout.
+
+### Display Target Preference
+The designated display monitor (e.g. Primary Screen, Secondary Screen, or Foreground Active Display) selected for presenting desktop prompts or notifications.
+
+### Prompt Urgency Level
+The designated priority tier of an administrative message (Normal or Urgent), determining visual styling, topmost priority, and audible alert chime within the user desktop session.
+
+### Offline Notification Queue
+A persistent local storage repository retaining system alerts and session lifecycle notifications during periods of host network unavailability, preserving original event occurrence timestamps until network connectivity is restored.
+

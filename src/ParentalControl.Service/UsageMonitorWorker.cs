@@ -55,7 +55,10 @@ public sealed class UsageMonitorWorker : BackgroundService
 
     private void ProcessTick()
     {
-        // Monotonic Clock Watchdog
+        // 1. Synchronize active sessions from Windows Terminal Services
+        _sessionTracker.SynchronizeSessions();
+
+        // 2. Monotonic Clock Watchdog
         var currentMonotonic = Environment.TickCount64;
         var currentWall = DateTime.UtcNow;
         var monotonicDeltaSec = (currentMonotonic - _lastMonotonicTick) / 1000.0;

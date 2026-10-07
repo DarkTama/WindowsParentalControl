@@ -14,6 +14,8 @@ public static class SettingsRepository
     public const string KeyAlertIntervals = "alert_intervals"; // e.g. "15,5,1"
     public const string KeyMaxDailyRequests = "max_daily_requests"; // default: 1
     public const string KeyLanguagePreset = "language_preset"; // "id" or "en"
+    public const string KeyPromptResponsePresets = "prompt_response_presets";
+    public const string DefaultPromptResponsePresets = "Sebentar lagi selesai game\nSedang tugas sekolah\nOke, segera logout\nTanggung, minta waktu 5 menit lagi";
 
     // Customizable message keys
     public const string KeyMsgLimitWarn = "msg_limit_warn";
@@ -54,6 +56,15 @@ public static class SettingsRepository
     public static bool IsTelegramNotifyAdminLogonEnabled()
     {
         return Get(KeyTelegramNotifyAdminLogon, "true") == "true";
+    }
+
+    public static List<string> GetPromptResponsePresets()
+    {
+        var raw = Get(KeyPromptResponsePresets, DefaultPromptResponsePresets);
+        return raw.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                  .Select(s => s.Trim())
+                  .Where(s => !string.IsNullOrEmpty(s))
+                  .ToList();
     }
 
     public static void Set(string key, string value)
