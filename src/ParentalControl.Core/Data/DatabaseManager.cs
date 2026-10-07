@@ -175,6 +175,31 @@ public static class DatabaseManager
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS pending_telegram_queue (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                notification_type TEXT NOT NULL,
+                payload_json TEXT NOT NULL,
+                event_time TEXT NOT NULL,
+                retry_count INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS session_prompts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_sid TEXT NOT NULL,
+                username TEXT NOT NULL,
+                message TEXT NOT NULL,
+                urgency TEXT NOT NULL DEFAULT 'NORMAL',
+                target_display INTEGER NOT NULL DEFAULT -1,
+                custom_options TEXT,
+                status TEXT NOT NULL DEFAULT 'PENDING',
+                response TEXT,
+                response_reason TEXT,
+                turnaround_seconds INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                answered_at TEXT
+            );
+
             CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events (timestamp);
             CREATE INDEX IF NOT EXISTS idx_events_user_timestamp ON events (user_sid, timestamp);
             CREATE INDEX IF NOT EXISTS idx_grace_user_date ON grace_requests (user_id, date);
@@ -182,6 +207,8 @@ public static class DatabaseManager
             CREATE INDEX IF NOT EXISTS idx_app_activity_hourly_date ON app_activity_hourly (user_id, date);
             CREATE INDEX IF NOT EXISTS idx_screen_captures_user_time ON screen_captures (user_id, timestamp);
             CREATE INDEX IF NOT EXISTS idx_schedule_exceptions_user_date ON schedule_exceptions (user_id, exception_date);
+            CREATE INDEX IF NOT EXISTS idx_pending_telegram_created ON pending_telegram_queue (created_at);
+            CREATE INDEX IF NOT EXISTS idx_prompts_user_status ON session_prompts (username, status);
             """;
         schemaCmd.ExecuteNonQuery();
 

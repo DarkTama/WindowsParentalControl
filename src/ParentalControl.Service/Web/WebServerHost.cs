@@ -106,6 +106,64 @@ public sealed class WebServerHost : BackgroundService
             return Task.FromResult(sb.ToString());
         };
 
+        TelegramBotService.OnPromptDispatchRequested = (targetUsername, message, urgency, targetDisplay, customOptions) =>
+        {
+            var user = UserRepository.GetByUsername(targetUsername)
+                ?? UserRepository.GetAll().FirstOrDefault(u => u.Username.Equals(targetUsername, StringComparison.OrdinalIgnoreCase));
+            if (user == null)
+            {
+                return Task.FromResult((false, $"Pengguna '{targetUsername}' tidak ditemukan."));
+            }
+
+            var promptId = SessionPromptRepository.Create(user.Sid, user.Username, message, urgency, targetDisplay, customOptions);
+            EventRepository.LogEvent(user.Sid, EventType.PROMPT_SENT, $"Pesan interaktif dikirim ke {user.Username}: \"{message}\" (Prioritas: {urgency})");
+
+            var activeSession = _sessionTracker.ActiveSessions.Values.FirstOrDefault(s => s.UserSid == user.Sid && !s.IsLocked);
+            if (activeSession != null)
+            {
+                _sessionTracker.EnsureAgentRunning(activeSession.SessionId);
+            }
+
+            return Task.FromResult((true, string.Empty));
+        };
+
+        TelegramBotService.OnLockSessionRequested = (sessionId) =>
+        {
+            if (sessionId > 0)
+            {
+                SessionManager.LockSession(sessionId);
+            }
+            var consoleId = SessionManager.GetActiveConsoleSessionId();
+            if (consoleId >= 0 && consoleId != sessionId)
+            {
+                SessionManager.LockSession(consoleId);
+            }
+            return Task.FromResult(true);
+        };
+
+        TelegramBotService.OnGrantBonusMinutesRequested = (targetUsername, minutes) =>
+        {
+            var user = UserRepository.GetByUsername(targetUsername)
+                ?? UserRepository.GetAll().FirstOrDefault(u => u.Username.Equals(targetUsername, StringComparison.OrdinalIgnoreCase));
+            if (user != null)
+            {
+                var today = DateOnly.FromDateTime(DateTime.Now);
+                UsageRepository.AddBonusMinutes(user.Id, today, minutes);
+                EventRepository.LogEvent(user.Sid, EventType.LOGIN, $"Admin menambahkan +{minutes}m via Telegram");
+                return Task.FromResult(true);
+            }
+            return Task.FromResult(false);
+        };
+
+        TelegramBotService.OnGetActiveSessionsRequested = () =>
+        {
+            var list = _sessionTracker.ActiveSessions.Values
+                .Where(s => !s.IsLocked)
+                .Select(s => (s.SessionId, s.Username, s.UserSid))
+                .ToList();
+            return Task.FromResult(list);
+        };
+
         app.MapGet("/", () => Results.Redirect("/request"));
 
         // User Grace Request Portal
@@ -406,6 +464,33 @@ public sealed class WebServerHost : BackgroundService
             }
 
             var user = UserRepository.GetByUsername(username);
+
+            object? activePromptObj = null;
+            var activePrompt = SessionPromptRepository.GetActivePrompt(username);
+            if (activePrompt != null)
+            {
+                List<string> optionsList;
+                if (!string.IsNullOrWhiteSpace(activePrompt.CustomOptions))
+                {
+                    optionsList = activePrompt.CustomOptions.Split('|', StringSplitOptions.RemoveEmptyEntries)
+                        .Select(s => s.Trim()).Where(s => !string.IsNullOrEmpty(s)).ToList();
+                }
+                else
+                {
+                    optionsList = SettingsRepository.GetPromptResponsePresets();
+                }
+
+                activePromptObj = new
+                {
+                    id = activePrompt.Id,
+                    message = activePrompt.Message,
+                    urgency = activePrompt.Urgency,
+                    targetDisplay = activePrompt.TargetDisplay,
+                    timeoutSeconds = 120,
+                    options = optionsList
+                };
+            }
+
             if (user == null || !user.IsRestricted)
             {
                 return Results.Ok(new
@@ -414,7 +499,8 @@ public sealed class WebServerHost : BackgroundService
                     isRestricted = false,
                     remainingSeconds = 0,
                     curfew = "Akun tidak dibatasi",
-                    isLocked = false
+                    isLocked = false,
+                    activePrompt = activePromptObj
                 });
             }
 
@@ -491,8 +577,77 @@ public sealed class WebServerHost : BackgroundService
                 lastDeclinedReason,
                 lastDeclinedTime,
                 captureRequested,
-                watchIntervalSeconds = watchInterval
+                watchIntervalSeconds = watchInterval,
+                activePrompt = activePromptObj
             });
+        });
+
+        // Agent Interactive Prompt Response API
+        app.MapPost("/api/agent/prompt/respond", async (HttpContext ctx) =>
+        {
+            try
+            {
+                using var reader = new StreamReader(ctx.Request.Body);
+                var body = await reader.ReadToEndAsync();
+                var doc = JsonDocument.Parse(body);
+                var promptId = doc.RootElement.GetProperty("promptId").GetInt32();
+                var response = doc.RootElement.GetProperty("response").GetString() ?? "YES";
+                var reason = doc.RootElement.TryGetProperty("reason", out var r) ? r.GetString() : null;
+                var turnaroundSeconds = doc.RootElement.TryGetProperty("turnaroundSeconds", out var ts) ? ts.GetInt32() : 0;
+
+                var prompt = SessionPromptRepository.GetById(promptId);
+                if (prompt == null)
+                {
+                    return Results.NotFound(new { error = "Pesan prompt tidak ditemukan." });
+                }
+
+                var resolved = SessionPromptRepository.ResolvePrompt(promptId, response, reason, turnaroundSeconds);
+                if (!resolved)
+                {
+                    return Results.BadRequest(new { error = "Pesan prompt sudah pernah dijawab." });
+                }
+
+                if (response.Equals("YES", StringComparison.OrdinalIgnoreCase))
+                {
+                    EventRepository.LogEvent(prompt.UserSid, EventType.PROMPT_ANSWERED, $"Prompt #{promptId} dijawab (YA) dalam {turnaroundSeconds}s");
+                }
+                else if (response.Equals("TIMEOUT", StringComparison.OrdinalIgnoreCase))
+                {
+                    EventRepository.LogEvent(prompt.UserSid, EventType.PROMPT_TIMEOUT, $"Prompt #{promptId} tidak dijawab (Timeout {turnaroundSeconds}s)");
+                }
+                else
+                {
+                    var reasonDesc = !string.IsNullOrWhiteSpace(reason) ? $": \"{reason}\"" : "";
+                    EventRepository.LogEvent(prompt.UserSid, EventType.PROMPT_ANSWERED, $"Prompt #{promptId} dijawab (TIDAK){reasonDesc} dalam {turnaroundSeconds}s");
+                }
+
+                prompt.Response = response;
+                prompt.ResponseReason = reason;
+                prompt.TurnaroundSeconds = turnaroundSeconds;
+                prompt.Status = response.Equals("TIMEOUT", StringComparison.OrdinalIgnoreCase) ? "TIMEOUT" : "ANSWERED";
+
+                var session = _sessionTracker.ActiveSessions.Values.FirstOrDefault(s => s.UserSid == prompt.UserSid);
+                var sessionId = session?.SessionId;
+
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _telegramBotService.SendPromptResponseAlertAsync(prompt, sessionId);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.Error(ex, "Failed to send prompt response alert to Telegram");
+                    }
+                });
+
+                return Results.Ok(new { success = true });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "Error processing prompt response");
+                return Results.BadRequest(new { error = ex.Message });
+            }
         });
 
         // Agent Activity Reporting API (posted by ParentalControl.Agent to record foreground window)
@@ -884,6 +1039,64 @@ public sealed class WebServerHost : BackgroundService
                 _logger.Error(ex, "Failed to execute lock session request");
                 return Results.BadRequest(new { error = "Invalid lock request payload." });
             }
+        });
+
+        // Web Admin Dispatch Interactive Prompt API
+        app.MapPost("/api/admin/prompt/send", async (HttpContext ctx) =>
+        {
+            if (!CheckAuth(ctx)) return Results.Unauthorized();
+
+            try
+            {
+                using var reader = new StreamReader(ctx.Request.Body);
+                var doc = JsonDocument.Parse(await reader.ReadToEndAsync());
+                var username = doc.RootElement.GetProperty("username").GetString() ?? "";
+                var message = doc.RootElement.GetProperty("message").GetString() ?? "";
+                var urgency = doc.RootElement.TryGetProperty("urgency", out var uProp) ? uProp.GetString() ?? "NORMAL" : "NORMAL";
+                var targetDisplay = doc.RootElement.TryGetProperty("targetDisplay", out var dProp) ? dProp.GetInt32() : -1;
+                var customOptions = doc.RootElement.TryGetProperty("customOptions", out var cProp) ? cProp.GetString() : null;
+
+                if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(message))
+                {
+                    return Results.BadRequest(new { error = "Pengguna dan pesan harus diisi." });
+                }
+
+                var user = UserRepository.GetByUsername(username)
+                    ?? UserRepository.GetAll().FirstOrDefault(u => u.Username.Equals(username, StringComparison.OrdinalIgnoreCase));
+                if (user == null)
+                {
+                    return Results.NotFound(new { error = $"Pengguna '{username}' tidak ditemukan." });
+                }
+
+                var promptId = SessionPromptRepository.Create(user.Sid, user.Username, message, urgency, targetDisplay, customOptions);
+                EventRepository.LogEvent(user.Sid, EventType.PROMPT_SENT, $"Pesan interaktif dikirim ke {user.Username}: \"{message}\" (Prioritas: {urgency})");
+
+                var activeSession = _sessionTracker.ActiveSessions.Values.FirstOrDefault(s => s.UserSid == user.Sid && !s.IsLocked);
+                if (activeSession != null)
+                {
+                    _sessionTracker.EnsureAgentRunning(activeSession.SessionId);
+
+                    if (!SessionManager.IsProcessRunningInSession("ParentalControl.Agent", activeSession.SessionId))
+                    {
+                        var popupTitle = urgency == "URGENT" ? "🚨 Parental Control — Mendesak" : "Parental Control — Pesan";
+                        NotificationManager.SendMessage(activeSession.SessionId, popupTitle, message, urgency == "URGENT", timeoutSeconds: 30);
+                    }
+                }
+
+                return Results.Ok(new { success = true, promptId });
+            }
+            catch (Exception ex)
+            {
+                _logger.Error(ex, "Failed to send prompt to user");
+                return Results.BadRequest(new { error = ex.Message });
+            }
+        });
+
+        // Web Admin Prompt History API
+        app.MapGet("/api/admin/prompts", (HttpContext ctx) =>
+        {
+            if (!CheckAuth(ctx)) return Results.Unauthorized();
+            return Results.Ok(SessionPromptRepository.GetHistory(20));
         });
         // Web Admin Resolve Request API
         app.MapPost("/api/admin/resolve-request", async (HttpContext ctx) =>
@@ -1336,7 +1549,8 @@ public sealed class WebServerHost : BackgroundService
                                      !string.IsNullOrWhiteSpace(SettingsRepository.Get(SettingsRepository.KeyTelegramChatId)),
                 telegramNotifySignIn = SettingsRepository.IsTelegramNotifySignInEnabled(),
                 telegramNotifySignOut = SettingsRepository.IsTelegramNotifySignOutEnabled(),
-                telegramNotifyAdminLogon = SettingsRepository.IsTelegramNotifyAdminLogonEnabled()
+                telegramNotifyAdminLogon = SettingsRepository.IsTelegramNotifyAdminLogonEnabled(),
+                promptResponsePresets = SettingsRepository.Get(SettingsRepository.KeyPromptResponsePresets, SettingsRepository.DefaultPromptResponsePresets)
             });
         });
 
@@ -1361,6 +1575,10 @@ public sealed class WebServerHost : BackgroundService
                 if (doc.RootElement.TryGetProperty("telegramNotifyAdminLogon", out var al))
                 {
                     SettingsRepository.Set(SettingsRepository.KeyTelegramNotifyAdminLogon, al.GetBoolean() ? "true" : "false");
+                }
+                if (doc.RootElement.TryGetProperty("promptResponsePresets", out var pr))
+                {
+                    SettingsRepository.Set(SettingsRepository.KeyPromptResponsePresets, pr.GetString() ?? SettingsRepository.DefaultPromptResponsePresets);
                 }
 
                 return Results.Ok(new { success = true });

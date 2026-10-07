@@ -54,15 +54,67 @@ public sealed class SessionTracker
             _logger.Information("Recovered existing session: {Username} (SID: {Sid}) on session {SessionId} (Locked: {IsLocked})",
                 username, sid, sessionId, isLocked);
 
-            if (user.IsRestricted && !isLocked)
+            if (!isLocked)
             {
                 EnsureAgentRunning(sessionId);
             }
         }
     }
 
+    public void SynchronizeSessions()
+    {
+        try
+        {
+            var loggedOn = SessionManager.GetLoggedOnSessions();
+            var loggedOnIds = new HashSet<int>();
+
+            foreach (var (sessionId, username, sid, isLocked) in loggedOn)
+            {
+                if (sid is null) continue;
+                loggedOnIds.Add(sessionId);
+
+                if (!_activeSessions.TryGetValue(sessionId, out var existing))
+                {
+                    var user = UserRepository.GetBySid(sid) ?? UserRepository.Upsert(sid, username, false);
+                    _activeSessions.TryAdd(sessionId, new ActiveSession(sessionId, sid, username, DateTime.Now, isLocked));
+                    _logger.Information("Synchronized session for {Username} on session {SessionId} (Locked: {IsLocked})",
+                        username, sessionId, isLocked);
+
+                    if (!isLocked)
+                    {
+                        EnsureAgentRunning(sessionId);
+                    }
+                }
+                else
+                {
+                    if (existing.IsLocked != isLocked)
+                    {
+                        _activeSessions[sessionId] = existing with { IsLocked = isLocked };
+                    }
+                }
+            }
+
+            foreach (var (sessionId, session) in _activeSessions)
+            {
+                if (!loggedOnIds.Contains(sessionId))
+                {
+                    if (_activeSessions.TryRemove(sessionId, out var removed))
+                    {
+                        FlushSessionTime(removed);
+                        _logger.Information("Removed stale session for {Username} (Session {SessionId})", removed.Username, sessionId);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Warning(ex, "Error synchronizing sessions from Terminal Services");
+        }
+    }
+
     public void OnUserLogon(int sessionId)
     {
+        var eventTime = DateTime.Now;
         var username = SessionManager.GetSessionUsername(sessionId);
         var sid = SessionManager.GetSessionUserSid(sessionId);
 
@@ -80,20 +132,21 @@ public sealed class SessionTracker
 
         if (!user.IsRestricted)
         {
-            _activeSessions.TryAdd(sessionId, new ActiveSession(sessionId, sid, username, DateTime.Now));
+            _activeSessions.TryAdd(sessionId, new ActiveSession(sessionId, sid, username, eventTime));
             EventRepository.LogEvent(sid, EventType.LOGIN);
             _logger.Information("User logged in (unrestricted): {Username}", username);
+            EnsureAgentRunning(sessionId);
 
             if (SettingsRepository.IsTelegramNotifyAdminLogonEnabled() && _telegramBotService != null)
             {
-                _ = Task.Run(() => _telegramBotService.SendAdminSignInAlertAsync(sessionId, username, Environment.MachineName, DateTime.Now));
+                _ = Task.Run(() => _telegramBotService.SendAdminSignInAlertAsync(sessionId, username, Environment.MachineName, eventTime));
             }
             return;
         }
 
-        var nowTime = TimeOnly.FromDateTime(DateTime.Now);
-        var dayOfWeek = DateTime.Now.DayOfWeek;
-        var today = DateOnly.FromDateTime(DateTime.Now);
+        var nowTime = TimeOnly.FromDateTime(eventTime);
+        var dayOfWeek = eventTime.DayOfWeek;
+        var today = DateOnly.FromDateTime(eventTime);
         var limit = ScheduleRepository.GetEffectiveLimit(user.Id, dayOfWeek, today);
         UsageRecord? usage = null;
         if (limit is not null)
@@ -124,7 +177,7 @@ public sealed class SessionTracker
             }
         }
 
-        _activeSessions.TryAdd(sessionId, new ActiveSession(sessionId, sid, username, DateTime.Now));
+        _activeSessions.TryAdd(sessionId, new ActiveSession(sessionId, sid, username, eventTime));
 
         var loginDetail = "";
         if (limit is not null)
@@ -143,12 +196,13 @@ public sealed class SessionTracker
             var remaining = limit != null ? Math.Max(0, (limit.DailyMinutes + (usage?.BonusMinutes ?? 0)) - (usage?.MinutesUsed ?? 0)) : 0;
             var start = limit?.ScheduleStart;
             var end = limit?.ScheduleEnd;
-            _ = Task.Run(() => _telegramBotService.SendUserSignInNotificationAsync(username, Environment.MachineName, DateTime.Now, remaining, start, end));
+            _ = Task.Run(() => _telegramBotService.SendUserSignInNotificationAsync(username, Environment.MachineName, eventTime, remaining, start, end));
         }
     }
 
     public void OnUserLogoff(int sessionId)
     {
+        var eventTime = DateTime.Now;
         _lastUnlockRejectNotification.TryRemove(sessionId, out _);
         if (_activeSessions.TryRemove(sessionId, out var session))
         {
@@ -158,10 +212,10 @@ public sealed class SessionTracker
             var user = UserRepository.GetBySid(session.UserSid);
             if (user != null && user.IsRestricted && SettingsRepository.IsTelegramNotifySignOutEnabled() && _telegramBotService != null)
             {
-                var today = DateOnly.FromDateTime(DateTime.Now);
+                var today = DateOnly.FromDateTime(eventTime);
                 var usage = UsageRepository.GetUsage(user.Id, today);
                 var used = usage?.MinutesUsed ?? 0;
-                _ = Task.Run(() => _telegramBotService.SendUserSignOutNotificationAsync(session.Username, Environment.MachineName, DateTime.Now, used));
+                _ = Task.Run(() => _telegramBotService.SendUserSignOutNotificationAsync(session.Username, Environment.MachineName, eventTime, used));
             }
         }
     }

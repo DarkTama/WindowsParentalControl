@@ -17,9 +17,14 @@ public sealed class TelegramBotService
     private readonly Serilog.ILogger _logger;
     private long _lastUpdateId = 0;
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (int RequestId, DateTime ExpiresAt)> _pendingCustomDeclines = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _pendingAskUsers = new();
 
     public static Func<string, Task<ScreenCaptureRecord?>>? OnCaptureRequested { get; set; }
     public static Func<Task<string>>? OnStatusRequested { get; set; }
+    public static Func<string, string, string, int, string?, Task<(bool success, string message)>>? OnPromptDispatchRequested { get; set; }
+    public static Func<int, Task<bool>>? OnLockSessionRequested { get; set; }
+    public static Func<string, int, Task<bool>>? OnGrantBonusMinutesRequested { get; set; }
+    public static Func<Task<List<(int sessionId, string username, string sid)>>>? OnGetActiveSessionsRequested { get; set; }
 
     public TelegramBotService(Serilog.ILogger logger)
     {
@@ -262,6 +267,66 @@ public sealed class TelegramBotService
             return;
         }
 
+        if (action == "ask_pick_user")
+        {
+            var targetUser = parts[1];
+            _pendingAskUsers[configuredChatId] = targetUser;
+            await AnswerCallbackQueryAsync(botToken, callbackId, $"Dipilih: {targetUser}");
+            await EditMessageTextAsync(botToken, configuredChatId, messageId,
+                $"💬 Ketik pesan Anda untuk *{targetUser}*:\n_(Contoh: Sudah selesai tugasnya? [Sudah|Belum 15m])_");
+            return;
+        }
+
+        if (action == "prompt_act")
+        {
+            var subAction = parts[1];
+            if (subAction == "grant")
+            {
+                int.TryParse(parts[2], out var mins);
+                var targetUser = parts.Length > 3 ? parts[3] : "";
+                if (OnGrantBonusMinutesRequested != null && !string.IsNullOrEmpty(targetUser))
+                {
+                    await OnGrantBonusMinutesRequested(targetUser, mins);
+                    await AnswerCallbackQueryAsync(botToken, callbackId, $"+{mins} menit ditambahkan.");
+                    var origText = messageNode?["text"]?.ToString() ?? "";
+                    await EditMessageTextAsync(botToken, configuredChatId, messageId,
+                        origText + $"\n\n✅ *Admin menambahkan +{mins} menit untuk {targetUser}.*");
+                }
+                else
+                {
+                    await AnswerCallbackQueryAsync(botToken, callbackId, "Gagal menambah waktu.");
+                }
+            }
+            else if (subAction == "lock")
+            {
+                int.TryParse(parts[2], out var targetSessionId);
+                if (OnLockSessionRequested != null)
+                {
+                    await OnLockSessionRequested(targetSessionId);
+                    await AnswerCallbackQueryAsync(botToken, callbackId, "Workstation dikunci!");
+                    var origText = messageNode?["text"]?.ToString() ?? "";
+                    await EditMessageTextAsync(botToken, configuredChatId, messageId,
+                        origText + $"\n\n🔒 *Sesi komputer berhasil dikunci oleh orang tua.*");
+                }
+                else
+                {
+                    await AnswerCallbackQueryAsync(botToken, callbackId, "Gagal mengunci sesi.");
+                }
+            }
+            else if (subAction == "dismiss")
+            {
+                if (int.TryParse(parts[2], out var promptId))
+                {
+                    SessionPromptRepository.DismissPrompt(promptId);
+                }
+                await AnswerCallbackQueryAsync(botToken, callbackId, "Pemberitahuan ditutup.");
+                var origText = messageNode?["text"]?.ToString() ?? "";
+                await EditMessageTextAsync(botToken, configuredChatId, messageId,
+                    origText + $"\n\n👌 *Pemberitahuan ditutup.*");
+            }
+            return;
+        }
+
 
         if (!int.TryParse(parts[1], out var requestId))
         {
@@ -498,6 +563,13 @@ public sealed class TelegramBotService
         var text = message?["text"]?.ToString()?.Trim() ?? "";
         if (string.IsNullOrWhiteSpace(text)) return;
 
+        if (_pendingAskUsers.TryGetValue(configuredChatId, out var pendingTargetUser))
+        {
+            _pendingAskUsers.TryRemove(configuredChatId, out _);
+            await DispatchAskPromptAsync(chatId, pendingTargetUser, text);
+            return;
+        }
+
         if (_pendingCustomDeclines.TryGetValue(configuredChatId, out var pending))
         {
             if (DateTime.UtcNow < pending.ExpiresAt)
@@ -572,14 +644,106 @@ public sealed class TelegramBotService
                 await SendTextMessageAsync(chatId, statusText);
             }
         }
+        else if (text.StartsWith("/ask", StringComparison.OrdinalIgnoreCase) || text.StartsWith("/tanya", StringComparison.OrdinalIgnoreCase))
+        {
+            var cmdParts = text.Split(' ', 3, StringSplitOptions.RemoveEmptyEntries);
+            if (cmdParts.Length < 3)
+            {
+                if (cmdParts.Length == 2)
+                {
+                    _pendingAskUsers[configuredChatId] = cmdParts[1];
+                    await SendTextMessageAsync(chatId, $"💬 Ketik pesan Anda untuk *{cmdParts[1]}*:\n_(Contoh: Waktunya makan siang ya? [Makan|Nanti 5m])_");
+                    return;
+                }
+
+                if (OnGetActiveSessionsRequested != null)
+                {
+                    var sessions = await OnGetActiveSessionsRequested();
+                    var activeUsers = sessions.Select(s => s.username).Distinct().ToList();
+                    if (activeUsers.Count == 0)
+                    {
+                        await SendTextMessageAsync(chatId, "ℹ️ Tidak ada pengguna yang sedang aktif saat ini.");
+                        return;
+                    }
+
+                    var buttons = activeUsers.Select(u => new[]
+                    {
+                        new { text = $"👤 {u}", callback_data = $"ask_pick_user:{u}" }
+                    }).ToArray();
+
+                    await SendTextMessageWithKeyboardAsync(chatId,
+                        "💬 *Pilih pengguna aktif yang ingin dikirimi pesan:*",
+                        new { inline_keyboard = buttons });
+                    return;
+                }
+                await SendTextMessageAsync(chatId, "ℹ️ Format: `/ask <username> <pesan>` atau `/ask`");
+                return;
+            }
+
+            var targetUser = cmdParts[1];
+            var messageBody = cmdParts[2];
+            await DispatchAskPromptAsync(chatId, targetUser, messageBody);
+        }
         else if (text.StartsWith("/help", StringComparison.OrdinalIgnoreCase) || text.StartsWith("/start", StringComparison.OrdinalIgnoreCase))
         {
             var helpMsg = "🛡️ *Parental Control Admin Bot*\n\n"
                         + "Perintah yang tersedia:\n"
+                        + "• `/ask [user] [pesan]` — Kirim pesan interaktif ke anak\n"
                         + "• `/capture [user]` — Ambil tangkapan layar desktop diam-diam\n"
                         + "• `/status` — Cek sisa screen time dan aplikasi aktif anak\n"
                         + "• `/help` — Tampilkan bantuan ini";
             await SendTextMessageAsync(chatId, helpMsg);
+        }
+    }
+
+    private async Task DispatchAskPromptAsync(string chatId, string targetUser, string rawMessage)
+    {
+        if (OnPromptDispatchRequested == null)
+        {
+            await SendTextMessageAsync(chatId, "⚠️ Layanan pesan interaktif belum siap.");
+            return;
+        }
+
+        var urgency = "NORMAL";
+        var body = rawMessage;
+
+        if (body.StartsWith("!urgent ", StringComparison.OrdinalIgnoreCase) || body.StartsWith("!mendesak ", StringComparison.OrdinalIgnoreCase))
+        {
+            urgency = "URGENT";
+            var firstSpace = body.IndexOf(' ');
+            body = body.Substring(firstSpace + 1).Trim();
+        }
+
+        string? customOptions = null;
+        var match = System.Text.RegularExpressions.Regex.Match(body, @"\[(.*?)\]");
+        if (match.Success)
+        {
+            customOptions = match.Groups[1].Value;
+            body = body.Remove(match.Index, match.Length).Trim();
+        }
+
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            await SendTextMessageAsync(chatId, "⚠️ Pesan tidak boleh kosong.");
+            return;
+        }
+
+        var (success, errMsg) = await OnPromptDispatchRequested(targetUser, body, urgency, -1, customOptions);
+        if (success)
+        {
+            var optStr = !string.IsNullOrEmpty(customOptions) ? $"\n• Pilihan khusus: `{customOptions}`" : "";
+            var urgStr = urgency == "URGENT" ? "🚨 Mendesak" : "Biasa";
+            await SendTextMessageAsync(chatId,
+                $"💬 *Pesan Terkirim ke `{EscapeMarkdown(targetUser)}`*\n"
+                + $"━━━━━━━━━━━━━━━━━━━━\n"
+                + $"• *Pesan:* _{EscapeMarkdown(body)}_\n"
+                + $"• *Prioritas:* {urgStr}{optStr}\n"
+                + $"• *Batas Waktu Respon:* 120 detik\n\n"
+                + $"_Menunggu respon dari komputer pengguna..._");
+        }
+        else
+        {
+            await SendTextMessageAsync(chatId, $"❌ Gagal mengirim pesan ke `{EscapeMarkdown(targetUser)}`: {errMsg}");
         }
     }
 
@@ -684,13 +848,20 @@ public sealed class TelegramBotService
         return false;
     }
 
-    public async Task<bool> SendUserSignInNotificationAsync(string username, string machineName, DateTime time, int remainingMinutes, TimeOnly? start, TimeOnly? end)
+    public static string FormatTimeWithDelay(DateTime eventTime, string lang)
     {
-        var token = SettingsRepository.Get(SettingsRepository.KeyTelegramBotToken);
-        var chatId = SettingsRepository.Get(SettingsRepository.KeyTelegramChatId);
-        if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(chatId)) return false;
+        var baseStr = $"{eventTime:HH:mm:ss}";
+        if ((DateTime.Now - eventTime).TotalSeconds > 60)
+        {
+            return lang == "en"
+                ? $"`{baseStr}` _(Delayed delivery: {DateTime.Now:HH:mm:ss})_"
+                : $"`{baseStr}` _(Terkirim tertunda: {DateTime.Now:HH:mm:ss})_";
+        }
+        return $"`{baseStr}`";
+    }
 
-        var lang = SettingsRepository.Get(SettingsRepository.KeyLanguagePreset, "id");
+    public static string BuildSignInNotificationText(string username, string machineName, DateTime time, int remainingMinutes, TimeOnly? start, TimeOnly? end, string lang)
+    {
         var remainingHours = remainingMinutes / 60;
         var remainingMins = remainingMinutes % 60;
         var remainingStr = remainingHours > 0 ? $"{remainingHours}j {remainingMins}m" : $"{remainingMins}m";
@@ -700,39 +871,29 @@ public sealed class TelegramBotService
         }
 
         var curfewStr = (start.HasValue && end.HasValue) ? $"{start.Value:HH:mm} – {end.Value:HH:mm}" : "-";
+        var timeStr = FormatTimeWithDelay(time, lang);
 
-        string text;
         if (lang == "en")
         {
-            text = $"👤 *Notification: User Signed In*\n"
+            return $"👤 *Notification: User Signed In*\n"
                  + $"━━━━━━━━━━━━━━━━━━━━\n"
                  + $"• *User:* `{EscapeMarkdown(username)}`\n"
                  + $"• *Computer:* `{EscapeMarkdown(machineName)}`\n"
-                 + $"• *Time:* `{time:HH:mm:ss}`\n"
+                 + $"• *Time:* {timeStr}\n"
                  + $"• *Remaining Screen Time:* {remainingStr}\n"
                  + $"• *Curfew Window:* {curfewStr}";
         }
-        else
-        {
-            text = $"👤 *Pemberitahuan: Pengguna Masuk*\n"
-                 + $"━━━━━━━━━━━━━━━━━━━━\n"
-                 + $"• *Pengguna:* `{EscapeMarkdown(username)}`\n"
-                 + $"• *Komputer:* `{EscapeMarkdown(machineName)}`\n"
-                 + $"• *Waktu:* `{time:HH:mm:ss}`\n"
-                 + $"• *Sisa Waktu Layar:* {remainingStr}\n"
-                 + $"• *Jam Operasional:* {curfewStr}";
-        }
-
-        return await SendWithRetryAsync(() => SendTextMessageAsync(chatId, text));
+        return $"👤 *Pemberitahuan: Pengguna Masuk*\n"
+             + $"━━━━━━━━━━━━━━━━━━━━\n"
+             + $"• *Pengguna:* `{EscapeMarkdown(username)}`\n"
+             + $"• *Komputer:* `{EscapeMarkdown(machineName)}`\n"
+             + $"• *Waktu:* {timeStr}\n"
+             + $"• *Sisa Waktu Layar:* {remainingStr}\n"
+             + $"• *Jam Operasional:* {curfewStr}";
     }
 
-    public async Task<bool> SendUserSignOutNotificationAsync(string username, string machineName, DateTime time, int minutesUsedToday)
+    public static string BuildSignOutNotificationText(string username, string machineName, DateTime time, int minutesUsedToday, string lang)
     {
-        var token = SettingsRepository.Get(SettingsRepository.KeyTelegramBotToken);
-        var chatId = SettingsRepository.Get(SettingsRepository.KeyTelegramChatId);
-        if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(chatId)) return false;
-
-        var lang = SettingsRepository.Get(SettingsRepository.KeyLanguagePreset, "id");
         var usedHours = minutesUsedToday / 60;
         var usedMins = minutesUsedToday % 60;
         var usedStr = usedHours > 0 ? $"{usedHours}j {usedMins}m" : $"{usedMins}m";
@@ -741,36 +902,28 @@ public sealed class TelegramBotService
             usedStr = usedHours > 0 ? $"{usedHours}h {usedMins}m" : $"{usedMins}m";
         }
 
-        string text;
+        var timeStr = FormatTimeWithDelay(time, lang);
+
         if (lang == "en")
         {
-            text = $"🚪 *Notification: User Signed Out*\n"
+            return $"🚪 *Notification: User Signed Out*\n"
                  + $"━━━━━━━━━━━━━━━━━━━━\n"
                  + $"• *User:* `{EscapeMarkdown(username)}`\n"
                  + $"• *Computer:* `{EscapeMarkdown(machineName)}`\n"
-                 + $"• *Time:* `{time:HH:mm:ss}`\n"
+                 + $"• *Time:* {timeStr}\n"
                  + $"• *Screen Time Used Today:* {usedStr}";
         }
-        else
-        {
-            text = $"🚪 *Pemberitahuan: Pengguna Keluar*\n"
-                 + $"━━━━━━━━━━━━━━━━━━━━\n"
-                 + $"• *Pengguna:* `{EscapeMarkdown(username)}`\n"
-                 + $"• *Komputer:* `{EscapeMarkdown(machineName)}`\n"
-                 + $"• *Waktu:* `{time:HH:mm:ss}`\n"
-                 + $"• *Total Waktu Terpakai Hari Ini:* {usedStr}";
-        }
-
-        return await SendWithRetryAsync(() => SendTextMessageAsync(chatId, text));
+        return $"🚪 *Pemberitahuan: Pengguna Keluar*\n"
+             + $"━━━━━━━━━━━━━━━━━━━━\n"
+             + $"• *Pengguna:* `{EscapeMarkdown(username)}`\n"
+             + $"• *Komputer:* `{EscapeMarkdown(machineName)}`\n"
+             + $"• *Waktu:* {timeStr}\n"
+             + $"• *Total Waktu Terpakai Hari Ini:* {usedStr}";
     }
 
-    public async Task<bool> SendAdminSignInAlertAsync(int sessionId, string username, string machineName, DateTime time)
+    public static (string Text, object Keyboard) BuildAdminSignInAlert(int sessionId, string username, string machineName, DateTime time, string lang)
     {
-        var token = SettingsRepository.Get(SettingsRepository.KeyTelegramBotToken);
-        var chatId = SettingsRepository.Get(SettingsRepository.KeyTelegramChatId);
-        if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(chatId)) return false;
-
-        var lang = SettingsRepository.Get(SettingsRepository.KeyLanguagePreset, "id");
+        var timeStr = FormatTimeWithDelay(time, lang);
         string text;
         object keyboard;
 
@@ -780,7 +933,7 @@ public sealed class TelegramBotService
                  + $"━━━━━━━━━━━━━━━━━━━━\n"
                  + $"• *User:* `{EscapeMarkdown(username)}` (Administrator / Unrestricted)\n"
                  + $"• *Computer:* `{EscapeMarkdown(machineName)}`\n"
-                 + $"• *Time:* `{time:HH:mm:ss}`\n\n"
+                 + $"• *Time:* {timeStr}\n\n"
                  + $"⚠️ *Is this you?*\n"
                  + $"If this logon was unauthorized, tap *Not Me — Lock PC!* immediately to secure your workstation.";
 
@@ -802,7 +955,7 @@ public sealed class TelegramBotService
                  + $"━━━━━━━━━━━━━━━━━━━━\n"
                  + $"• *Pengguna:* `{EscapeMarkdown(username)}` (Administrator / Hak Penuh)\n"
                  + $"• *Komputer:* `{EscapeMarkdown(machineName)}`\n"
-                 + $"• *Waktu:* `{time:HH:mm:ss}`\n\n"
+                 + $"• *Waktu:* {timeStr}\n\n"
                  + $"⚠️ *Apakah ini Anda?*\n"
                  + $"Jika ini bukan Anda atau mencurigakan, segera ketuk tombol *Kunci Komputer* di bawah untuk mengamankan PC.";
 
@@ -819,7 +972,219 @@ public sealed class TelegramBotService
             };
         }
 
+        return (text, keyboard);
+    }
+
+    public async Task<bool> SendUserSignInNotificationAsync(string username, string machineName, DateTime time, int remainingMinutes, TimeOnly? start, TimeOnly? end)
+    {
+        var token = SettingsRepository.Get(SettingsRepository.KeyTelegramBotToken);
+        var chatId = SettingsRepository.Get(SettingsRepository.KeyTelegramChatId);
+        if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(chatId)) return false;
+
+        var lang = SettingsRepository.Get(SettingsRepository.KeyLanguagePreset, "id");
+        var text = BuildSignInNotificationText(username, machineName, time, remainingMinutes, start, end, lang);
+
+        var success = await SendWithRetryAsync(() => SendTextMessageAsync(chatId, text));
+        if (!success)
+        {
+            var payload = JsonSerializer.Serialize(new SignInNotificationPayload
+            {
+                Username = username,
+                MachineName = machineName,
+                RemainingMinutes = remainingMinutes,
+                Start = start,
+                End = end
+            });
+            PendingNotificationRepository.Enqueue("USER_SIGN_IN", payload, time);
+        }
+        return success;
+    }
+
+    public async Task<bool> SendUserSignOutNotificationAsync(string username, string machineName, DateTime time, int minutesUsedToday)
+    {
+        var token = SettingsRepository.Get(SettingsRepository.KeyTelegramBotToken);
+        var chatId = SettingsRepository.Get(SettingsRepository.KeyTelegramChatId);
+        if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(chatId)) return false;
+
+        var lang = SettingsRepository.Get(SettingsRepository.KeyLanguagePreset, "id");
+        var text = BuildSignOutNotificationText(username, machineName, time, minutesUsedToday, lang);
+
+        var success = await SendWithRetryAsync(() => SendTextMessageAsync(chatId, text));
+        if (!success)
+        {
+            var payload = JsonSerializer.Serialize(new SignOutNotificationPayload
+            {
+                Username = username,
+                MachineName = machineName,
+                MinutesUsedToday = minutesUsedToday
+            });
+            PendingNotificationRepository.Enqueue("USER_SIGN_OUT", payload, time);
+        }
+        return success;
+    }
+
+    public async Task<bool> SendAdminSignInAlertAsync(int sessionId, string username, string machineName, DateTime time)
+    {
+        var token = SettingsRepository.Get(SettingsRepository.KeyTelegramBotToken);
+        var chatId = SettingsRepository.Get(SettingsRepository.KeyTelegramChatId);
+        if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(chatId)) return false;
+
+        var lang = SettingsRepository.Get(SettingsRepository.KeyLanguagePreset, "id");
+        var (text, keyboard) = BuildAdminSignInAlert(sessionId, username, machineName, time, lang);
+
+        var success = await SendWithRetryAsync(() => SendTextMessageWithKeyboardAsync(chatId, text, keyboard));
+        if (!success)
+        {
+            var payload = JsonSerializer.Serialize(new AdminSignInPayload
+            {
+                SessionId = sessionId,
+                Username = username,
+                MachineName = machineName
+            });
+            PendingNotificationRepository.Enqueue("ADMIN_SIGN_IN", payload, time);
+        }
+        return success;
+    }
+
+    public async Task<bool> SendPromptResponseAlertAsync(SessionPrompt prompt, int? sessionId = null)
+    {
+        var token = SettingsRepository.Get(SettingsRepository.KeyTelegramBotToken);
+        var chatId = SettingsRepository.Get(SettingsRepository.KeyTelegramChatId);
+        if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(chatId)) return false;
+
+        var lang = SettingsRepository.Get(SettingsRepository.KeyLanguagePreset, "id");
+        var isYes = string.Equals(prompt.Response, "YES", StringComparison.OrdinalIgnoreCase);
+        var isTimeout = string.Equals(prompt.Response, "TIMEOUT", StringComparison.OrdinalIgnoreCase);
+        var durationStr = lang == "en" ? $"{prompt.TurnaroundSeconds} seconds" : $"{prompt.TurnaroundSeconds} detik";
+
+        string text;
+        if (lang == "en")
+        {
+            var statusIcon = isYes ? "✅" : (isTimeout ? "⏳" : "❌");
+            var respText = isYes ? "Yes / Acknowledged" : (isTimeout ? "Timed Out (No Response)" : "No / Declined");
+            text = $"💬 *Notification: User Responded to Prompt*\n"
+                 + $"━━━━━━━━━━━━━━━━━━━━\n"
+                 + $"• *User:* `{EscapeMarkdown(prompt.Username)}`\n"
+                 + $"• *Prompt:* _{EscapeMarkdown(prompt.Message)}_\n"
+                 + $"• *Response:* {statusIcon} *{respText}*\n";
+
+            if (!isYes && !isTimeout && !string.IsNullOrWhiteSpace(prompt.ResponseReason))
+            {
+                text += $"• *Reason:* _{EscapeMarkdown(prompt.ResponseReason)}_\n";
+            }
+            text += $"• *Turnaround Time:* {durationStr}\n"
+                 + $"• *Priority:* {(prompt.Urgency == "URGENT" ? "🚨 Urgent" : "Normal")}";
+        }
+        else
+        {
+            var statusIcon = isYes ? "✅" : (isTimeout ? "⏳" : "❌");
+            var respText = isYes ? "Ya / Siap" : (isTimeout ? "Waktu Habis (Tidak Ada Respon)" : "Tidak");
+            text = $"💬 *Pemberitahuan: Respon Pesan Pengguna*\n"
+                 + $"━━━━━━━━━━━━━━━━━━━━\n"
+                 + $"• *Pengguna:* `{EscapeMarkdown(prompt.Username)}`\n"
+                 + $"• *Pesan:* _{EscapeMarkdown(prompt.Message)}_\n"
+                 + $"• *Jawaban:* {statusIcon} *{respText}*\n";
+
+            if (!isYes && !isTimeout && !string.IsNullOrWhiteSpace(prompt.ResponseReason))
+            {
+                text += $"• *Alasan:* _{EscapeMarkdown(prompt.ResponseReason)}_\n";
+            }
+            text += $"• *Waktu Menjawab:* {durationStr}\n"
+                 + $"• *Prioritas:* {(prompt.Urgency == "URGENT" ? "🚨 Mendesak" : "Biasa")}";
+        }
+
+        var rows = new List<object[]>();
+        var targetSid = sessionId ?? 0;
+
+        if (!isYes && !isTimeout)
+        {
+            rows.Add(new object[]
+            {
+                new { text = "➕ 15 Menit", callback_data = $"prompt_act:grant:15:{prompt.Username}" },
+                new { text = "➕ 30 Menit", callback_data = $"prompt_act:grant:30:{prompt.Username}" }
+            });
+        }
+
+        rows.Add(new object[]
+        {
+            new { text = "🔒 Kunci PC Sekarang", callback_data = $"prompt_act:lock:{targetSid}" },
+            new { text = "👌 Tutup", callback_data = $"prompt_act:dismiss:{prompt.Id}" }
+        });
+
+        var keyboard = new { inline_keyboard = rows.ToArray() };
         return await SendWithRetryAsync(() => SendTextMessageWithKeyboardAsync(chatId, text, keyboard));
+    }
+
+    public async Task<int> ProcessPendingQueueAsync()
+    {
+        var token = SettingsRepository.Get(SettingsRepository.KeyTelegramBotToken);
+        var chatId = SettingsRepository.Get(SettingsRepository.KeyTelegramChatId);
+        if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(chatId)) return 0;
+
+        if (!await CheckConnectivityAsync()) return 0;
+
+        var pending = PendingNotificationRepository.GetPending(10);
+        if (pending.Count == 0) return 0;
+
+        var processed = 0;
+        foreach (var item in pending)
+        {
+            if (item.RetryCount >= 20)
+            {
+                PendingNotificationRepository.Delete(item.Id);
+                continue;
+            }
+
+            try
+            {
+                var lang = SettingsRepository.Get(SettingsRepository.KeyLanguagePreset, "id");
+                bool sent = false;
+
+                if (item.NotificationType == "USER_SIGN_IN")
+                {
+                    var payload = JsonSerializer.Deserialize<SignInNotificationPayload>(item.PayloadJson);
+                    if (payload != null)
+                    {
+                        var text = BuildSignInNotificationText(payload.Username, payload.MachineName, item.EventTime, payload.RemainingMinutes, payload.Start, payload.End, lang);
+                        sent = await SendTextMessageAsync(chatId, text);
+                    }
+                }
+                else if (item.NotificationType == "USER_SIGN_OUT")
+                {
+                    var payload = JsonSerializer.Deserialize<SignOutNotificationPayload>(item.PayloadJson);
+                    if (payload != null)
+                    {
+                        var text = BuildSignOutNotificationText(payload.Username, payload.MachineName, item.EventTime, payload.MinutesUsedToday, lang);
+                        sent = await SendTextMessageAsync(chatId, text);
+                    }
+                }
+                else if (item.NotificationType == "ADMIN_SIGN_IN")
+                {
+                    var payload = JsonSerializer.Deserialize<AdminSignInPayload>(item.PayloadJson);
+                    if (payload != null)
+                    {
+                        var (text, keyboard) = BuildAdminSignInAlert(payload.SessionId, payload.Username, payload.MachineName, item.EventTime, lang);
+                        sent = await SendTextMessageWithKeyboardAsync(chatId, text, keyboard);
+                    }
+                }
+
+                if (sent)
+                {
+                    PendingNotificationRepository.Delete(item.Id);
+                    processed++;
+                }
+                else
+                {
+                    PendingNotificationRepository.IncrementRetry(item.Id);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.Warning(ex, "Failed to send queued Telegram notification #{Id}", item.Id);
+                PendingNotificationRepository.IncrementRetry(item.Id);
+            }
+        }
+        return processed;
     }
 
 

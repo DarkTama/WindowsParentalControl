@@ -76,6 +76,14 @@ An enhanced screen time, application telemetry, and schedule curfew management s
 - **Advance Requests by Children**: Children can submit advance schedule change requests directly from the `/request` portal.
 - **Full Management**: Add, review, and delete exceptions via both WPF Desktop Admin and Kestrel Web Admin.
 
+### 10. Interactive Session Prompts & Multi-Monitor Desktop Delivery
+- **Bi-Directional Interactive Communication**: Administrators can dispatch messages into active desktop sessions from both Web Admin and Telegram bot (`/ask [user] [message]`).
+- **Targeted Multi-Monitor Presentation**: Dialog can target Monitor 1, Monitor 2, or automatically follow the user's active foreground application display, automatically clamping to the primary screen if disconnected.
+- **Urgency Levels & Audible Alerts**: Messages support `Normal` or `Urgent` priority (triggering system exclamation chime and high-contrast red styling).
+- **Progressive Child Response UX**: Quick 1-tap `[ Ya / Siap ]` confirmation, or expand `[ Tidak ]` with customizable preset chips (`"Sebentar lagi selesai game"`, `"Sedang tugas sekolah"`, `"Oke, segera logout"`) and custom text notes.
+- **Turnaround Timing & Parent Adjudication**: Telegram card reports response with turnaround duration (e.g. *"Dijawab dalam 14 detik"*), plus inline adjudication buttons: `[+15m]`, `[+30m]`, `[🔒 Kunci PC]`.
+- **Durable Offline Telegram Notification Queue**: Captures immutable timestamps on cold boot or host network disconnection, draining queued alerts when network restores and displaying deferred dispatch tags (`• Waktu: 08:00:12 (Terkirim tertunda: 08:45:00)`), eliminating timestamp drift.
+
 ## Architecture
 
 ```

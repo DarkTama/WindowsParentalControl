@@ -337,16 +337,17 @@ Debug.Assert(latestReq != null && latestReq.Id == schedReq.Id, "Latest request s
 Console.WriteLine("✅ Schedule Exception Precedence & Extended Grace Requests Verification Passed.");
 
 // 15. Test AppVersion & UpdateService SemVer Logic
-Debug.Assert(AppVersion.Current == "1.4.1", "Current version should be 1.4.1");
-Debug.Assert(AppVersion.DisplayName == "v1.4.1", "Display name should be v1.4.1");
+Debug.Assert(AppVersion.Current == "1.5.0", "Current version should be 1.5.0");
+Debug.Assert(AppVersion.DisplayName == "v1.5.0", "Display name should be v1.5.0");
 Debug.Assert(AppVersion.GitHubRepo == "DarkTama/WindowsParentalControl", "GitHub repo match");
 
-Debug.Assert(UpdateService.IsNewerVersion("1.5.0", "1.4.1") == true, "1.5.0 is newer than 1.4.1");
-Debug.Assert(UpdateService.IsNewerVersion("2.0.0", "1.4.1") == true, "2.0.0 is newer than 1.4.1");
-Debug.Assert(UpdateService.IsNewerVersion("1.4.2", "1.4.1") == true, "1.4.2 is newer than 1.4.1");
-Debug.Assert(UpdateService.IsNewerVersion("1.4.1", "1.4.1") == false, "1.4.1 is not newer than 1.4.1");
-Debug.Assert(UpdateService.IsNewerVersion("1.4.0", "1.4.1") == false, "1.4.0 is not newer than 1.4.1");
-Debug.Assert(UpdateService.IsNewerVersion("1.3.0", "1.4.1") == false, "1.3.0 is not newer than 1.4.1");
+Debug.Assert(UpdateService.IsNewerVersion("1.5.1", "1.5.0") == true, "1.5.1 is newer than 1.5.0");
+Debug.Assert(UpdateService.IsNewerVersion("2.0.0", "1.5.0") == true, "2.0.0 is newer than 1.5.0");
+Debug.Assert(UpdateService.IsNewerVersion("1.6.0", "1.5.0") == true, "1.6.0 is newer than 1.5.0");
+Debug.Assert(UpdateService.IsNewerVersion("1.5.0", "1.5.0") == false, "1.5.0 is not newer than 1.5.0");
+Debug.Assert(UpdateService.IsNewerVersion("1.4.1", "1.5.0") == false, "1.4.1 is not newer than 1.5.0");
+Debug.Assert(UpdateService.IsNewerVersion("1.4.0", "1.5.0") == false, "1.4.0 is not newer than 1.5.0");
+Debug.Assert(UpdateService.IsNewerVersion("1.3.0", "1.5.0") == false, "1.3.0 is not newer than 1.5.0");
 Debug.Assert(UpdateService.IsNewerVersion("1.2.1", "1.4.1") == false, "1.2.1 is not newer than 1.4.1");
 Console.WriteLine("✅ AppVersion & UpdateService SemVer Comparison Verification Passed.");
 
@@ -401,6 +402,89 @@ Debug.Assert(!resSignOut, "SendUserSignOutNotificationAsync should return false 
 var resAdmin = botService.SendAdminSignInAlertAsync(1, "Administrator", "TEST-PC", DateTime.Now).GetAwaiter().GetResult();
 Debug.Assert(!resAdmin, "SendAdminSignInAlertAsync should return false gracefully when token is unconfigured");
 Console.WriteLine("✅ Telegram Session Notification Toggles & Security Alert Events Passed.");
+
+// 17. Test Offline Telegram Notification Queue & Timestamp Drift Bug Fix
+var pastEventTime = DateTime.Now.AddMinutes(-15);
+var dummyPayload = "{\"Username\":\"TestKid\",\"MachineName\":\"KID-PC\",\"MinutesUsedToday\":45}";
+PendingNotificationRepository.Enqueue("USER_SIGN_OUT", dummyPayload, pastEventTime);
+Debug.Assert(PendingNotificationRepository.GetCount() == 1, "Pending queue count should be 1 after enqueue");
+
+var pendingList = PendingNotificationRepository.GetPending(5);
+Debug.Assert(pendingList.Count == 1, "Pending list should return 1 item");
+Debug.Assert(pendingList[0].NotificationType == "USER_SIGN_OUT", "Type should be USER_SIGN_OUT");
+Debug.Assert(Math.Abs((pendingList[0].EventTime - pastEventTime).TotalSeconds) < 1, "Original event time must be preserved exactly");
+Debug.Assert(pendingList[0].RetryCount == 0, "Initial retry count should be 0");
+
+PendingNotificationRepository.IncrementRetry(pendingList[0].Id);
+var retriedList = PendingNotificationRepository.GetPending(5);
+Debug.Assert(retriedList[0].RetryCount == 1, "Retry count should be 1 after increment");
+
+// Verify FormatTimeWithDelay behavior
+var recentTime = DateTime.Now;
+var formattedRecent = TelegramBotService.FormatTimeWithDelay(recentTime, "id");
+Debug.Assert(!formattedRecent.Contains("Terkirim tertunda"), "Immediate notification should not have delayed tag");
+Debug.Assert(formattedRecent.Contains(recentTime.ToString("HH:mm:ss")), "Recent time string must match event time");
+
+var formattedDelayedId = TelegramBotService.FormatTimeWithDelay(pastEventTime, "id");
+Debug.Assert(formattedDelayedId.Contains("Terkirim tertunda"), "Delayed notification in ID must contain 'Terkirim tertunda'");
+Debug.Assert(formattedDelayedId.Contains(pastEventTime.ToString("HH:mm:ss")), "Delayed notification must display true original event time");
+
+var formattedDelayedEn = TelegramBotService.FormatTimeWithDelay(pastEventTime, "en");
+Debug.Assert(formattedDelayedEn.Contains("Delayed delivery"), "Delayed notification in EN must contain 'Delayed delivery'");
+Debug.Assert(formattedDelayedEn.Contains(pastEventTime.ToString("HH:mm:ss")), "Delayed notification in EN must display true original event time");
+
+PendingNotificationRepository.Delete(pendingList[0].Id);
+Debug.Assert(PendingNotificationRepository.GetCount() == 0, "Pending queue should be 0 after delete");
+Console.WriteLine("✅ Offline Telegram Notification Queue & Timestamp Drift Bug Fix Passed.");
+
+// 18. Test Interactive Session Prompts Repository & Presets
+var defaultPresets = SettingsRepository.GetPromptResponsePresets();
+Debug.Assert(defaultPresets.Count >= 3, "Default prompt presets should have at least 3 items");
+Debug.Assert(defaultPresets.Any(p => p.Contains("selesai game", StringComparison.OrdinalIgnoreCase)), "Default preset should include game finish option");
+
+var promptId1 = SessionPromptRepository.Create(testSid, "TestBrother", "Mau makan siang?", "URGENT", 1, "Sekarang|Nanti 10m");
+Debug.Assert(promptId1 > 0, "Created prompt ID should be > 0");
+
+var activePrompt = SessionPromptRepository.GetActivePrompt("TestBrother");
+Debug.Assert(activePrompt != null, "Active prompt should be found");
+Debug.Assert(activePrompt!.Id == promptId1, "Active prompt ID should match");
+Debug.Assert(activePrompt.Urgency == "URGENT", "Urgency should be URGENT");
+Debug.Assert(activePrompt.TargetDisplay == 1, "Target display should be 1");
+Debug.Assert(activePrompt.CustomOptions == "Sekarang|Nanti 10m", "Custom options should match");
+Debug.Assert(activePrompt.Status == "PENDING", "Status should be PENDING");
+
+var resolvedSuccess = SessionPromptRepository.ResolvePrompt(promptId1, "NO", "Nanti 10m", 14);
+Debug.Assert(resolvedSuccess, "Prompt resolution should succeed");
+
+var promptAfterResolve = SessionPromptRepository.GetById(promptId1);
+Debug.Assert(promptAfterResolve != null, "Prompt should exist");
+Debug.Assert(promptAfterResolve!.Status == "ANSWERED", "Status should be ANSWERED");
+Debug.Assert(promptAfterResolve.Response == "NO", "Response should be NO");
+Debug.Assert(promptAfterResolve.ResponseReason == "Nanti 10m", "Response reason should match");
+Debug.Assert(promptAfterResolve.TurnaroundSeconds == 14, "Turnaround seconds should be 14");
+Debug.Assert(promptAfterResolve.AnsweredAt != null, "AnsweredAt should not be null");
+
+// Verify active prompt is now cleared
+Debug.Assert(SessionPromptRepository.GetActivePrompt("TestBrother") == null, "Active prompt should be null after resolve");
+
+// Test timeout resolution
+var promptId2 = SessionPromptRepository.Create(testSid, "TestBrother", "Sudah selesai tugas?", "NORMAL", -1);
+var activePrompt2 = SessionPromptRepository.GetActivePrompt("TestBrother");
+Debug.Assert(activePrompt2 != null && activePrompt2.Id == promptId2, "Second prompt should be active");
+SessionPromptRepository.ResolvePrompt(promptId2, "TIMEOUT", null, 120);
+var prompt2After = SessionPromptRepository.GetById(promptId2);
+Debug.Assert(prompt2After!.Status == "TIMEOUT", "Status should be TIMEOUT");
+Debug.Assert(prompt2After.TurnaroundSeconds == 120, "Turnaround should be 120s");
+
+// Test Prompt Event Logging
+EventRepository.LogEvent(testSid, EventType.PROMPT_SENT, "Prompt sent test");
+EventRepository.LogEvent(testSid, EventType.PROMPT_ANSWERED, "Prompt answered test");
+EventRepository.LogEvent(testSid, EventType.PROMPT_TIMEOUT, "Prompt timeout test");
+var promptEvents = EventRepository.GetEvents(userSid: testSid);
+Debug.Assert(promptEvents.Any(e => e.EventType == EventType.PROMPT_SENT), "PROMPT_SENT should be in event log");
+Debug.Assert(promptEvents.Any(e => e.EventType == EventType.PROMPT_ANSWERED), "PROMPT_ANSWERED should be in event log");
+Debug.Assert(promptEvents.Any(e => e.EventType == EventType.PROMPT_TIMEOUT), "PROMPT_TIMEOUT should be in event log");
+Console.WriteLine("✅ Interactive Session Prompts Repository & Presets Passed.");
 
 // Cleanup test user
 UserRepository.DeleteBySid(testSid);
